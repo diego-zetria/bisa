@@ -235,12 +235,23 @@
     const w = container.clientWidth || 400;
     const h = height || container.clientHeight || 300;
 
-    const maxLinks = Math.max(1, ...data.nodes.map(n => n.links || 1));
+    // Defesa: o ForceGraph quebra com qualquer link cuja ponta não exista como
+    // nó (ex.: wikilink pendente). O backend já filtra, mas garantimos aqui
+    // também — UI nunca deve travar por causa de dado de grafo.
+    const nodeIds = new Set((data.nodes || []).map(n => n.id));
+    const nodes = data.nodes || [];
+    const links = (data.links || []).filter(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      return nodeIds.has(s) && nodeIds.has(t);
+    });
+
+    const maxLinks = Math.max(1, ...nodes.map(n => n.links || 1));
 
     const fg = window.ForceGraph()(container)
       .width(w)
       .height(h)
-      .graphData({ nodes: data.nodes, links: data.links })
+      .graphData({ nodes, links })
       .nodeId('id')
       .nodeLabel('name')
       .nodeColor(nodeColor)
