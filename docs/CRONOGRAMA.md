@@ -113,4 +113,25 @@ implementação com Claude Code), não em datas.
 
 ## Desvios do desenho (preencher durante a execução)
 
-_(vazio — nenhum desvio registrado)_
+- **Fase 0** — Removido `tests/finance-parse.test.js` (testava `public/preview.js`,
+  arquivo biso-only que não portamos). Features biso-only não montadas no
+  `server.js`: english coach, copilot, gain, recorder, rtk, echoes — fora do
+  escopo do Bisa. Adicionado token de **supervisor** (segundo token) já na
+  Fase 0 (estava planejado p/ Fase 7) porque o `server.js` precisava do
+  conceito desde o início; rotas de supervisor reais ficam na Fase 7.
+- **Fase 1 — permissões do Claude (importante).** O CLI em modo `-p`
+  (stream-json) **não expõe** o handshake `can_use_tool`: as tools rodam
+  automaticamente, sem prompt. Consequência: os cards "aprovar/negar" da UI
+  (DESIGN §7.1/§8) **não disparam** em operação normal. O guard real da
+  usuária passa a ser a **allowlist/deny do `~/bisa-data/.claude/settings.json`**
+  (semeado na Fase 0: bloqueia `rm`, `sudo`, `curl`, `wget`, web, e leitura
+  fora da pasta). Os endpoints `POST /llm/permission` e o evento
+  `llm.permission_request` ficam implementados mas inertes — reativam sozinhos
+  se uma versão futura do CLI trouxer o handshake. **Recomendação:** manter o
+  deny-list rígido como a verdadeira camada de segurança.
+- **Fase 1 — multi-turn por `--resume`.** O CLI encerra o processo ao fim de
+  cada turno; a conversa contínua re-spawna com `--resume <session_id>`
+  (persistido em `.meta/llm-session.json`). Transparente para a UI.
+- **Fase 1 — model fallback.** O CLI emite `system/model_fallback`
+  (ex.: fable-5 → opus-4-8) silenciosamente; tratado como ruído. O uso real
+  é registrado com o modelo efetivo em `.meta/llm-usage.jsonl`.

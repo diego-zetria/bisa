@@ -49,6 +49,17 @@ const resolveInsideCwd = makeResolveInsideCwd(() => CWD);
 const moveToTrash = makeMoveToTrash(() => CWD);
 
 const app = express();
+
+// WS broadcast — declared early (hoisted fn + const Set) because some modules
+// (pkm indexer) broadcast synchronously during construction, before the WS
+// server below exists. clients stays empty until connections arrive; that's
+// fine — broadcasting to zero clients is a no-op.
+const clients = new Set();
+function broadcast(obj) {
+  const msg = JSON.stringify(obj);
+  for (const ws of clients) { try { ws.send(msg); } catch {} }
+}
+
 const globalJson = express.json({ limit: '64kb' });
 const bigJson = express.json({ limit: '5mb' });
 app.use((req, res, next) => {
@@ -204,12 +215,6 @@ server.on('upgrade', (req, socket, head) => {
   if (pathName !== '/ws') { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => { ws._role = role; wss.emit('connection', ws, req); });
 });
-
-const clients = new Set();
-const broadcast = (obj) => {
-  const msg = JSON.stringify(obj);
-  for (const ws of clients) { try { ws.send(msg); } catch {} }
-};
 
 wss.on('connection', (ws) => {
   clients.add(ws);
