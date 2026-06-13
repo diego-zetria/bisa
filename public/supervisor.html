@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bisa · supervisor</title><link rel="stylesheet" href="/style.css">
+</head><body>
+<div class="screen-pad" style="max-width:560px">
+  <h1>bisa · supervisor</h1>
+  <p class="muted">Painel do Diego. Cole seu SUPERVISOR_TOKEN para usar.</p>
+  <input id="tok" placeholder="SUPERVISOR_TOKEN" autocomplete="off">
+  <button class="btn block" id="go" style="margin-top:8px">Carregar</button>
+
+  <div id="out" style="display:none">
+    <div class="section-title">Parear dispositivo dela</div>
+    <div class="card" style="text-align:center">
+      <img id="qr" alt="QR de pareamento" style="max-width:280px;width:100%">
+      <p class="muted" id="purl" style="word-break:break-all;font-size:.82rem"></p>
+    </div>
+    <div class="section-title">Uso de API (créditos)</div>
+    <div class="card" id="usage"><span class="muted">…</span></div>
+  </div>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+async function load(){
+  const t=$('#tok').value.trim(); if(!t)return;
+  const H={'x-bisa-token':t};
+  try{
+    const u=await (await fetch('/pair/url',{headers:H})).json();
+    $('#purl').textContent=u.url;
+    $('#qr').src='/pair/qr?token='+encodeURIComponent(t);
+    const us=await (await fetch('/llm/usage',{headers:H})).json();
+    const s=us.summary||{};
+    $('#usage').innerHTML='<b>Total:</b> US$ '+(s.totalCostUsd||0).toFixed(4)+
+      '<br><span class="muted">'+(us.rows?us.rows.length:0)+' chamadas registradas</span>';
+    $('#out').style.display='block';
+  }catch(e){ alert('Token inválido ou servidor indisponível.'); }
+}
+$('#go').onclick=load;
+</script>
+</body></html>
