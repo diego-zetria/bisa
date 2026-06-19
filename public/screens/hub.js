@@ -627,6 +627,13 @@
     finBtn.addEventListener('click', () => BISA.go('finance'));
     right.appendChild(finBtn);
 
+    /* Botão Câmeras (sentinel/Frigate via proxy /sentinel) */
+    const camBtn = el('button', 'btn ghost block');
+    camBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    camBtn.textContent = '📹 Câmeras';
+    camBtn.addEventListener('click', () => BISA.go('sentinel'));
+    right.appendChild(camBtn);
+
     grid.append(left, right);
 
     /* ─── Refresh function ─── */
