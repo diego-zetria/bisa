@@ -69,6 +69,18 @@
       border:2px solid var(--line); border-top-color:var(--primary); animation:bisa-spin .7s linear infinite; }
     #bisa-annot-run .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     @keyframes bisa-spin { to { transform:rotate(360deg); } }
+
+    /* Selo "Desfazer" da última mudança aplicada */
+    #bisa-annot-undo { position:fixed; left:50%; transform:translateX(-50%);
+      bottom:calc(86px + env(safe-area-inset-bottom)); z-index:901; display:none; align-items:center; gap:8px;
+      background:var(--ink); color:var(--surface); box-shadow:var(--shadow);
+      font-size:.84rem; padding:8px 10px 8px 15px; border-radius:999px; max-width:calc(100vw - 24px); }
+    #bisa-annot-undo.show { display:flex; }
+    #bisa-annot-undo .u-txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #bisa-annot-undo .u-btn { background:var(--surface); color:var(--ink); border:none; border-radius:999px;
+      font:inherit; font-weight:700; font-size:.82rem; padding:5px 13px; min-height:32px; cursor:pointer; flex:0 0 auto; }
+    #bisa-annot-undo .u-x { background:none; border:none; color:var(--surface); opacity:.65; cursor:pointer;
+      font-size:1rem; padding:2px 4px; flex:0 0 auto; }
   `;
   const st = document.createElement('style');
   st.id = 'bisa-annot-style'; st.textContent = css;
@@ -317,6 +329,32 @@
     if (m.type === 'annot-status') { if (m.state === 'running') showRun(m.text); else hideRun(); return; }
     if (m.type === 'annot-clarify' && m.payload) { hideRun(); showClarify(m.payload); }
   });
+
+  // ── Selo "Desfazer" da última mudança aplicada ────────────────────────
+  const undoBar = elt('div'); undoBar.id = 'bisa-annot-undo';
+  const uTxt = elt('span', 'u-txt');
+  const uBtn = elt('button', 'u-btn', 'Desfazer');
+  const uX = elt('button', 'u-x', '✕');
+  undoBar.append(uTxt, uBtn, uX);
+  document.body.appendChild(undoBar);
+  let undoId = null;
+  const hideUndo = () => undoBar.classList.remove('show');
+  const showUndo = (item) => {
+    undoId = item.id;
+    uTxt.textContent = `Aplicado: ${item.request || ''}`;
+    uBtn.disabled = false; uBtn.textContent = 'Desfazer';
+    undoBar.classList.add('show');
+  };
+  uBtn.onclick = async () => {
+    if (!undoId) return;
+    uBtn.disabled = true; uBtn.textContent = 'Desfazendo…';
+    try { await BISA.api('/feedback/undo', { method: 'POST', json: { id: undoId } }); } // reload chega via WS
+    catch (e) { uBtn.disabled = false; uBtn.textContent = 'Desfazer'; BISA.toast(e.message || 'Não consegui desfazer'); }
+  };
+  uX.onclick = () => { const id = undoId; hideUndo(); BISA.api('/feedback/seen', { method: 'POST', json: { id } }).catch(() => {}); };
+
+  // Ao carregar: se houver mudança recente aplicada, oferece desfazer.
+  BISA.api('/feedback/last').then((r) => { if (r && r.item) showUndo(r.item); }).catch(() => {});
 
   // ── FAB ───────────────────────────────────────────────────────────────
   const fab = elt('button', null, '✎');
