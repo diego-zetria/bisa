@@ -103,7 +103,7 @@
       .fin-env-row:last-child { border-bottom:none; }
       .fin-env-top { display:flex; align-items:center; gap:9px; font-size:.95rem; cursor:pointer; }
       .fin-env-dot { width:11px; height:11px; border-radius:50%; flex:0 0 auto; }
-      .fin-env-name { flex:1; min-width:0; }
+      .fin-env-name { flex:1; min-width:0; color:var(--positive); }
       .fin-env-caret { color:var(--ink-soft); font-size:.75rem; }
       .fin-env-pct { font-weight:700; color:var(--ink-soft); min-width:42px; text-align:right; }
       .fin-env-bar { position:relative; height:28px; background:var(--surface-2);
