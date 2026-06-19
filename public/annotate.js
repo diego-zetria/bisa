@@ -39,6 +39,25 @@
     .bisa-annot-acts { display:grid; grid-template-columns:1fr 2fr; gap:10px; margin-top:12px; }
     .bisa-annot-cancel { min-height:var(--tap); border:1px solid var(--line); background:var(--surface-2);
       color:var(--ink); border-radius:var(--radius-sm); font-weight:600; cursor:pointer; }
+
+    /* Janela de clarificação (pedido ambíguo → análise + opções) */
+    .bisa-clar-overlay { position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,.38);
+      display:flex; align-items:center; justify-content:center; padding:20px; }
+    .bisa-clar-modal { background:var(--surface); border-radius:16px; box-shadow:0 12px 40px rgba(0,0,0,.22);
+      width:100%; max-width:430px; max-height:86vh; overflow-y:auto; padding:20px; }
+    .bisa-clar-action { font-size:.72rem; color:var(--ink-soft); text-transform:uppercase;
+      letter-spacing:.06em; font-weight:700; }
+    .bisa-clar-title { font-weight:700; font-size:1.1rem; margin:2px 0 6px; }
+    .bisa-clar-interp { color:var(--ink); font-size:.96rem; line-height:1.4; margin-bottom:4px; }
+    .bisa-clar-in { font-size:.76rem; color:var(--ink-soft); margin-bottom:10px; word-break:break-word; }
+    .bisa-clar-in b { color:var(--ink); }
+    .bisa-clar-lbl { font-size:.78rem; color:var(--ink-soft); font-weight:600; margin:8px 0 6px; }
+    .bisa-clar-opts { display:flex; flex-direction:column; gap:8px; }
+    .bisa-clar-opt { text-align:left; min-height:var(--tap); padding:11px 14px; border:1px solid var(--line);
+      background:var(--surface-2); color:var(--ink); border-radius:12px; font:inherit; font-size:.95rem; cursor:pointer; }
+    .bisa-clar-opt:active { background:var(--accent-soft); border-color:var(--primary); }
+    .bisa-clar-other { width:100%; margin-top:10px; }
+    .bisa-clar-acts { display:grid; grid-template-columns:1fr 2fr; gap:10px; margin-top:12px; }
   `;
   const st = document.createElement('style');
   st.id = 'bisa-annot-style'; st.textContent = css;
@@ -72,6 +91,7 @@
   let modeOn = false;
   let banner = null;
   let scrim = null, pop = null, keyHandler = null, targetEl = null;
+  let clarOverlay = null; // janela de clarificação aberta
 
   const screenEl = () => document.getElementById('screen');
 
@@ -202,6 +222,61 @@
     p.classList.remove('open');
     setTimeout(() => p.remove(), 160);
   }
+
+  // ── Janela de clarificação ────────────────────────────────────────────
+  // O agente do Modo Anotar achou o pedido ambíguo: mostra a análise dele +
+  // opções prováveis pra tocar. Tocar uma opção re-aplica com o pedido refinado.
+  function closeClarify() { if (clarOverlay) { clarOverlay.remove(); clarOverlay = null; } }
+
+  function showClarify(p) {
+    closeClarify();
+    const overlay = elt('div', 'bisa-clar-overlay');
+    const modal = elt('div', 'bisa-clar-modal');
+    overlay.appendChild(modal);
+
+    if (p.action) modal.appendChild(elt('div', 'bisa-clar-action', p.action));
+    modal.appendChild(elt('div', 'bisa-clar-title', 'O que você quer fazer?'));
+    if (p.interpretation) modal.appendChild(elt('div', 'bisa-clar-interp', p.interpretation));
+    if (p.elementText) {
+      const e = elt('div', 'bisa-clar-in');
+      e.innerHTML = `No elemento: <b>${(p.elementText || '').slice(0, 80)}</b>`;
+      modal.appendChild(e);
+    }
+
+    const refine = async (request) => {
+      try { await BISA.api('/feedback/refine', { method: 'POST', json: { id: p.id, request } }); closeClarify(); BISA.toast('Aplicando…'); }
+      catch (e) { BISA.toast(e.message || 'Erro ao aplicar'); }
+    };
+
+    modal.appendChild(elt('div', 'bisa-clar-lbl', 'Opções prováveis'));
+    const opts = elt('div', 'bisa-clar-opts');
+    (p.options || []).forEach((o) => {
+      const b = elt('button', 'bisa-clar-opt', o.label);
+      b.onclick = () => refine(o.request);
+      opts.appendChild(b);
+    });
+    modal.appendChild(opts);
+
+    const other = elt('input', 'bisa-clar-other');
+    other.type = 'text'; other.placeholder = 'Outro — descreva o que quer'; other.enterKeyHint = 'send';
+    modal.appendChild(other);
+
+    const acts = elt('div', 'bisa-clar-acts');
+    const cancel = elt('button', 'bisa-annot-cancel', 'Cancelar');
+    cancel.onclick = closeClarify;
+    const apply = elt('button', 'btn', 'Aplicar');
+    const submitOther = () => { const v = other.value.trim(); if (!v) { BISA.toast('Escolha uma opção ou descreva'); return; } refine(v); };
+    apply.onclick = submitOther;
+    other.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitOther(); } });
+    acts.append(cancel, apply);
+    modal.appendChild(acts);
+
+    overlay.onclick = (e) => { if (e.target === overlay) closeClarify(); };
+    clarOverlay = overlay;
+    document.body.appendChild(overlay);
+  }
+
+  if (BISA.onWs) BISA.onWs((m) => { if (m && m.type === 'annot-clarify' && m.payload) showClarify(m.payload); });
 
   // ── FAB ───────────────────────────────────────────────────────────────
   const fab = elt('button', null, '✎');
