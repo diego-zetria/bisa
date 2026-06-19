@@ -71,6 +71,8 @@
     ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
+      // recarga remota (Modo Anotar: dev aplicou uma mudança → a usuária vê na hora)
+      if (m && m.type === 'reload') { location.reload(); return; }
       for (const fn of wsSubs) { try { fn(m); } catch {} }
     };
     ws.onclose = () => { clearTimeout(wsTimer); wsTimer = setTimeout(connectWs, 2000); };

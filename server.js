@@ -64,7 +64,7 @@ const globalJson = express.json({ limit: '64kb' });
 const bigJson = express.json({ limit: '5mb' });
 app.use((req, res, next) => {
   if (req.path === '/fs/write' || req.path.startsWith('/pkm/inbox')) return next();
-  if (req.path.startsWith('/api/hook/')) return bigJson(req, res, next);
+  if (req.path.startsWith('/api/hook/') || req.path.startsWith('/feedback')) return bigJson(req, res, next);
   return globalJson(req, res, next);
 });
 
@@ -194,6 +194,10 @@ push.bridgeNotifications(dispatchNotification);
 // === pareamento QR (supervisor) ============================================
 const makePair = require('./lib/pair');
 app.use(makePair({ requireSupervisor, AUTH_TOKEN, PORT }).router);
+
+// === feedback (anotações iPad+Pencil → inbox que o dev lê no Mac) ===========
+const makeFeedback = require('./lib/feedback');
+app.use(makeFeedback({ requireAuth, getCwd: () => CWD, broadcast: (...a) => broadcast(...a) }));
 
 // === HTTP + WS =============================================================
 const server = http.createServer(app);
