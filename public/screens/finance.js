@@ -1967,7 +1967,8 @@
           const bar = elt('div', 'fin-env-bar');
           const fill = elt('div', 'fin-env-fill');
           fill.style.width = `${Math.min(100, util * 100).toFixed(0)}%`;
-          fill.style.background = over ? 'var(--negative)' : 'var(--positive)';
+          fill.style.background = over ? 'var(--negative)'
+            : (b.id === 'liberdade' ? b.color : b.id === 'conforto' ? 'var(--positive)' : 'var(--primary)');
           fill.style.opacity = over ? '0.45' : '0.30';
           const nums = elt('div', 'fin-env-nums');
           nums.append(
