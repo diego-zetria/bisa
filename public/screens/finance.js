@@ -66,11 +66,11 @@
       .fin-collapse-vals { flex:1; text-align:right; font-size:.82rem; white-space:nowrap; }
 
       /* ── Categorias ──────────────────────────────────────────────────── */
-      .fin-cat-row { display:flex; align-items:center; gap:10px; margin:8px 0; }
+      .fin-cat-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:12px 0; }
       .fin-cat-name { flex:1; font-size:.9rem; text-transform:capitalize; }
-      .fin-cat-bar-wrap { flex:2; background:var(--surface-2); border-radius:999px; height:8px; overflow:hidden; }
+      .fin-cat-bar-wrap { order:2; flex-basis:100%; background:var(--surface-2); border-radius:999px; height:8px; overflow:hidden; }
       .fin-cat-bar { height:100%; border-radius:999px; background:var(--negative); transition:width .4s; }
-      .fin-cat-amt { min-width:84px; text-align:right; font-size:.85rem; color:var(--ink-soft); }
+      .fin-cat-amt { order:1; min-width:84px; text-align:right; font-size:.85rem; color:var(--ink-soft); }
 
       /* ── Lançamentos ─────────────────────────────────────────────────── */
       .fin-sec-head { display:flex; align-items:center; gap:8px; margin:18px 2px 8px; }
