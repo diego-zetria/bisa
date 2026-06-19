@@ -98,6 +98,20 @@
   };
   const textOf = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 
+  // Contexto: texto do ancestral mais próximo que ACRESCENTA informação (ex.: o
+  // rótulo da linha). Essencial p/ componentes repetidos (as 6 barras de envelope
+  // têm o mesmo seletor — só o contexto diz qual é "Conforto" vs "Metas").
+  const contextOf = (el) => {
+    const own = textOf(el);
+    let n = el.parentElement, i = 0;
+    while (n && n.id !== 'screen' && n !== document.body && i < 3) {
+      const t = textOf(n);
+      if (t && t.length > own.length + 4 && t.length <= 180) return t;
+      n = n.parentElement; i++;
+    }
+    return '';
+  };
+
   // ── estado ──────────────────────────────────────────────────────────
   let modeOn = false;
   let banner = null;
@@ -186,7 +200,7 @@
       try {
         await BISA.api('/feedback', {
           method: 'POST',
-          json: { screen: screenName(), selector: describe(el), elementText: txt, request },
+          json: { screen: screenName(), selector: describe(el), elementText: txt, context: contextOf(el), request },
         });
         closePop();
         setMode(false);
