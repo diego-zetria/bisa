@@ -170,10 +170,10 @@
       .backlink-item:last-child { border-bottom: none; }
       .backlink-exc { color: var(--ink-soft); margin-top: 3px; font-size: .85rem; }
 
-      /* pill de tipo */
-      .pill-people   { background: #e8f0fe; color: #1a73e8; }
-      .pill-projects { background: #e6f4ea; color: #1e7e34; }
-      .pill-documents{ background: #fff3cd; color: #856404; }
+      /* pill de tipo — paleta terrosa (sage/olive/tan), tipos distinguíveis */
+      .pill-people   { background: #e7ede1; color: #4f6b55; }
+      .pill-projects { background: #dde7dd; color: #38583f; }
+      .pill-documents{ background: #f0e7d6; color: #8a6d3b; }
       .pill-journal  { background: var(--accent-soft); color: var(--ink-soft); }
     `;
     document.head.appendChild(s);
@@ -182,7 +182,7 @@
   // ---- helpers de tipo ----
   const TYPE_LABEL = { people: 'Pessoa', projects: 'Projeto', documents: 'Documento', journal: 'Diário' };
   const TYPE_CLASS = { people: 'pill-people', projects: 'pill-projects', documents: 'pill-documents', journal: 'pill-journal' };
-  const TYPE_COLOR = { people: '#4285F4', projects: '#34A853', documents: '#FBBC04', 'j:': '#A0A0A0' };
+  const TYPE_COLOR = { people: '#9bae8e', projects: '#4f6b55', documents: '#c2a36b', 'j:': '#a8a39a' };
 
   function typePill(type) {
     const cls = TYPE_CLASS[type] || '';
