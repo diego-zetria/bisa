@@ -58,6 +58,17 @@
     .bisa-clar-opt:active { background:var(--accent-soft); border-color:var(--primary); }
     .bisa-clar-other { width:100%; margin-top:10px; }
     .bisa-clar-acts { display:grid; grid-template-columns:1fr 2fr; gap:10px; margin-top:12px; }
+
+    /* Selo "request rodando" (o agente do Modo Anotar está aplicando) */
+    #bisa-annot-run { position:fixed; top:calc(8px + env(safe-area-inset-top)); left:50%;
+      transform:translateX(-50%); z-index:901; display:none; align-items:center; gap:9px;
+      background:var(--surface); color:var(--ink); border:1px solid var(--line); box-shadow:var(--shadow);
+      font-size:.84rem; font-weight:600; padding:7px 14px; border-radius:999px; max-width:calc(100vw - 24px); }
+    #bisa-annot-run.show { display:flex; }
+    #bisa-annot-run .spin { width:14px; height:14px; flex:0 0 auto; border-radius:50%;
+      border:2px solid var(--line); border-top-color:var(--primary); animation:bisa-spin .7s linear infinite; }
+    #bisa-annot-run .txt { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    @keyframes bisa-spin { to { transform:rotate(360deg); } }
   `;
   const st = document.createElement('style');
   st.id = 'bisa-annot-style'; st.textContent = css;
@@ -276,7 +287,22 @@
     document.body.appendChild(overlay);
   }
 
-  if (BISA.onWs) BISA.onWs((m) => { if (m && m.type === 'annot-clarify' && m.payload) showClarify(m.payload); });
+  // ── Selo "request rodando" ────────────────────────────────────────────
+  const runBadge = elt('div');
+  runBadge.id = 'bisa-annot-run';
+  runBadge.append(elt('span', 'spin'), elt('span', 'txt', 'Aplicando sua anotação…'));
+  document.body.appendChild(runBadge);
+  const showRun = (text) => {
+    runBadge.querySelector('.txt').textContent = text ? `Aplicando: ${text}` : 'Aplicando sua anotação…';
+    runBadge.classList.add('show');
+  };
+  const hideRun = () => runBadge.classList.remove('show');
+
+  if (BISA.onWs) BISA.onWs((m) => {
+    if (!m) return;
+    if (m.type === 'annot-status') { if (m.state === 'running') showRun(m.text); else hideRun(); return; }
+    if (m.type === 'annot-clarify' && m.payload) { hideRun(); showClarify(m.payload); }
+  });
 
   // ── FAB ───────────────────────────────────────────────────────────────
   const fab = elt('button', null, '✎');
