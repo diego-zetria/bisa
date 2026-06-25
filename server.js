@@ -63,8 +63,8 @@ function broadcast(obj) {
 const globalJson = express.json({ limit: '64kb' });
 const bigJson = express.json({ limit: '5mb' });
 app.use((req, res, next) => {
-  if (req.path === '/fs/write' || req.path.startsWith('/pkm/inbox')) return next();
-  if (req.path.startsWith('/api/hook/') || req.path.startsWith('/feedback')) return bigJson(req, res, next);
+  if (req.path === '/fs/write' || req.path.startsWith('/pkm/inbox') || req.path.startsWith('/sentinel') || req.path === '/biso' || req.path.startsWith('/biso/')) return next();
+  if (req.path.startsWith('/api/hook/') || req.path.startsWith('/feedback') || req.path === '/vault/write') return bigJson(req, res, next);
   return globalJson(req, res, next);
 });
 
@@ -83,6 +83,14 @@ app.get('/healthz', (_req, res) => res.type('text').send('ok'));
 app.get('/auth-check', (req, res) => {
   if (!isAuthed(req)) return res.status(401).json({ ok: false });
   res.json({ ok: true, role: isSupervisor(req) ? 'supervisor' : 'user' });
+});
+
+// Desbloqueio local — o "selo"/runa da tela inicial (public/gate.js). SEM auth
+// por design: roda na rede local dela; o ritual é experiência, não barreira.
+// Seta o cookie e devolve o token de usuária p/ o cliente usar (header + WS).
+app.post('/unlock', (_req, res) => {
+  setTokenCookie(res, AUTH_TOKEN);
+  res.json({ ok: true, token: AUTH_TOKEN });
 });
 
 // === fs api (portado do biso R2) ===========================================
@@ -199,6 +207,164 @@ app.use(makePair({ requireSupervisor, AUTH_TOKEN, PORT }).router);
 const makeFeedback = require('./lib/feedback');
 app.use(makeFeedback({ requireAuth, getCwd: () => CWD, broadcast: (...a) => broadcast(...a) }));
 
+// === sentinel (proxy reverso → Frigate, câmeras/monitoramento) ==============
+const makeSentinel = require('./lib/sentinel');
+const sentinel = makeSentinel({ requireAuth });
+app.use(sentinel.router);
+
+// === ponte biso (proxy REST do biso :7777 + chat nativo no projeto do biso) =
+// Auto-configura lendo o .env do biso (porta, token, CWD). Tudo sob a auth do
+// bisa: o iPad fala só com o bisa; o token do biso é injetado no servidor.
+const BISO_DIR = process.env.BISO_DIR || path.resolve(__dirname, '..', 'biso');
+const bisoEnv = (() => {
+  const out = {};
+  try {
+    for (const line of fs.readFileSync(path.join(BISO_DIR, '.env'), 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/);
+      if (m) out[m[1]] = m[2].trim();
+    }
+  } catch {}
+  return out;
+})();
+const BISO_URL = process.env.BISO_URL || `http://127.0.0.1:${bisoEnv.PORT || 7777}`;
+const BISO_TOKEN = process.env.BISO_TOKEN || bisoEnv.AUTH_TOKEN || '';
+const BISO_CHAT_CWD = process.env.BISO_CHAT_CWD || bisoEnv.CWD || BISO_DIR;
+const BISO_JOURNAL = process.env.BISO_JOURNAL || path.join(BISO_DIR, 'codex', 'journal.md');
+
+const makeBisoBridge = require('./lib/biso-bridge');
+app.use(makeBisoBridge({ requireAuth, BISO_URL, BISO_TOKEN }).router);
+
+// Chat "Biso": reusa a máquina de sessão stream-json do bisa, mas apontada p/ o
+// projeto do biso e com as envs do biso injetadas. Os eventos llm.* dessa sessão
+// são renomeados p/ biso.llm.* para não colidir com o chat do bisa (mesmo broadcast).
+const makeBisoSession = require('./lib/llm/session');
+const bisoBroadcast = (obj) => {
+  if (obj && typeof obj.type === 'string' && obj.type.startsWith('llm')) {
+    broadcast(Object.assign({}, obj, { type: 'biso.' + obj.type }));
+  } else { broadcast(obj); }
+};
+// CWD do chat = projeto ATIVO do biso, lido de .meta/projects.json A CADA TURNO —
+// então trocar de projeto no biso reflete no chat sem reiniciar o bisa. Override
+// explícito: env BISO_CHAT_CWD. Fallback: CWD do .env do biso, depois o dir do biso.
+const resolveBisoCwd = () => {
+  if (process.env.BISO_CHAT_CWD) return BISO_CHAT_CWD;      // override explícito
+  try {
+    const pj = JSON.parse(fs.readFileSync(path.join(BISO_DIR, '.meta', 'projects.json'), 'utf8'));
+    const cur = (pj.projects || []).find((p) => p.id === pj.current);
+    if (cur && cur.path && fs.existsSync(cur.path)) return cur.path;
+  } catch {}
+  return BISO_CHAT_CWD;
+};
+
+const bisoSession = makeBisoSession({
+  CWD: BISO_CHAT_CWD, getCwd: resolveBisoCwd, CLAUDE_CMD, USER_SHELL,
+  broadcast: bisoBroadcast, dispatchNotification,
+  extraEnv: { BISO_URL, BISO_TOKEN, BISO_JOURNAL },
+});
+const handleBisoWsMessage = (ws, msg) => {
+  switch (msg.type) {
+    case 'biso.llm.send': {
+      const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+      if (!text) return;
+      const attachments = Array.isArray(msg.attachments) ? msg.attachments : [];
+      bisoSession.send(text, attachments).catch(() => {});
+      break;
+    }
+    case 'biso.llm.interrupt': bisoSession.interrupt(); break;
+    default: break;
+  }
+};
+// Chips de follow-up p/ o Caderno: um claude -p curto e barato propõe 2-3 próximas
+// mensagens após cada resposta. Best-effort — falha vira lista vazia, sem erro.
+// Fora do namespace /biso (logo tem o body parseado pelo express.json).
+app.post('/biso-followups', requireAuth, async (req, res) => {
+  const user = String((req.body && req.body.user) || '').slice(0, 2000);
+  const assistant = String((req.body && req.body.assistant) || '').slice(0, 4000);
+  if (!user && !assistant) return res.json({ suggestions: [] });
+  const prompt = `Última troca de uma conversa com um agente de código (Claude Code):\n\n[Usuário]\n${user}\n\n[Assistente]\n${assistant}\n\nProponha de 2 a 3 mensagens CURTAS (máx ~6 palavras cada) que o usuário poderia enviar a seguir para avançar o trabalho. Devem ser DISTINTAS entre si (não redundantes) e acionáveis. Responda APENAS um array JSON de strings, nada mais.`;
+  try {
+    const out = await headless.runClaudeHeadless(prompt, resolveBisoCwd(), 25000, { feature: 'biso-followups' });
+    let arr = [];
+    const m = out && out.match(/\[[\s\S]*\]/);
+    if (m) { try { arr = JSON.parse(m[0]); } catch {} }
+    arr = Array.isArray(arr) ? arr.filter((s) => typeof s === 'string' && s.trim()).slice(0, 3) : [];
+    res.json({ suggestions: arr });
+  } catch { res.json({ suggestions: [] }); }
+});
+
+// === vault Obsidian (frontend de escrita "Notas") =========================
+// Acesso de arquivos confinado ao vault, independente do projeto ativo do biso.
+const obsidianDir = () => {
+  if (process.env.OBSIDIAN_DIR) return process.env.OBSIDIAN_DIR;
+  try {
+    const pj = JSON.parse(fs.readFileSync(path.join(BISO_DIR, '.meta', 'projects.json'), 'utf8'));
+    const o = (pj.projects || []).find((p) => p.id === 'obsidian' || /obsidian/i.test(p.name || ''));
+    if (o && o.path && fs.existsSync(o.path)) return o.path;
+  } catch {}
+  return path.join(require('os').homedir(), 'Projects', 'obsidian');
+};
+const OBSIDIAN_DIR = obsidianDir();
+const resolveInsideVault = makeResolveInsideCwd(() => OBSIDIAN_DIR);
+app.get('/vault/list', requireAuth, (req, res) => {
+  try {
+    const rel = req.query.path || '.';
+    const abs = resolveInsideVault(rel);
+    const entries = fs.readdirSync(abs, { withFileTypes: true })
+      .filter((d) => !d.name.startsWith('.'))
+      .map((d) => ({ name: d.name, dir: d.isDirectory(), rel: (rel === '.' ? '' : rel + '/') + d.name }))
+      .sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
+    res.json({ root: OBSIDIAN_DIR, rel, entries });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.get('/vault/file', requireAuth, (req, res) => {
+  try {
+    const rel = req.query.path;
+    if (!rel) return res.status(400).json({ error: 'path obrigatório' });
+    const abs = resolveInsideVault(rel);
+    res.json({ path: rel, content: fs.readFileSync(abs, 'utf8'), mtimeMs: fs.statSync(abs).mtimeMs });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+app.post('/vault/write', requireAuth, (req, res) => {
+  try {
+    const rel = req.body && req.body.path;
+    const content = req.body && req.body.content;
+    if (!rel || typeof content !== 'string') return res.status(400).json({ error: 'path+content obrigatórios' });
+    const abs = resolveInsideVault(rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, 'utf8');
+    res.json({ ok: true, path: rel, mtimeMs: fs.statSync(abs).mtimeMs });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Claude-assist das Notas: sessão própria no CWD do vault → enxerga o CLAUDE.md/
+// skills/memórias da pasta (sabe os padrões a seguir). Eventos llm.* → notas.llm.*
+// (não colide com o chat do bisa nem com o do Biso). Reusa a máquina de sessão.
+const vaultBroadcast = (obj) => {
+  if (obj && typeof obj.type === 'string' && obj.type.startsWith('llm')) {
+    broadcast(Object.assign({}, obj, { type: 'notas.' + obj.type }));
+  } else { broadcast(obj); }
+};
+const vaultSession = makeBisoSession({
+  CWD: OBSIDIAN_DIR, CLAUDE_CMD, USER_SHELL,
+  broadcast: vaultBroadcast, dispatchNotification,
+  permissionMode: 'acceptEdits',   // o Claude das Notas pode editar arquivos do vault
+});
+const handleVaultWsMessage = (ws, msg) => {
+  switch (msg.type) {
+    case 'notas.llm.send': {
+      const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+      if (!text) return;
+      vaultSession.send(text, []).catch(() => {});
+      break;
+    }
+    case 'notas.llm.interrupt': vaultSession.interrupt(); break;
+    default: break;
+  }
+};
+
+console.log(`[bisa] ponte biso → ${BISO_URL} (chat → projeto ativo: ${resolveBisoCwd()})${BISO_TOKEN ? '' : ' [SEM TOKEN — confira BISO_DIR/.env]'}`);
+console.log(`[bisa] vault obsidian (Notas) → ${OBSIDIAN_DIR}`);
+
 // === HTTP + WS =============================================================
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
@@ -216,6 +382,7 @@ server.on('upgrade', (req, socket, head) => {
   const role = wsAuthed(req);
   if (!role) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
   const pathName = new URL(req.url, 'http://x').pathname;
+  if (pathName.startsWith('/sentinel')) return sentinel.upgrade(req, socket, head); // live view do Frigate
   if (pathName !== '/ws') { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => { ws._role = role; wss.emit('connection', ws, req); });
 });
@@ -225,7 +392,9 @@ wss.on('connection', (ws) => {
   ws.on('close', () => clients.delete(ws));
   ws.on('message', (raw) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
-    if (msg && msg.type && msg.type.startsWith('llm')) llm.handleWsMessage(ws, msg);
+    if (msg && msg.type && msg.type.startsWith('notas.llm')) handleVaultWsMessage(ws, msg);
+    else if (msg && msg.type && msg.type.startsWith('biso.llm')) handleBisoWsMessage(ws, msg);
+    else if (msg && msg.type && msg.type.startsWith('llm')) llm.handleWsMessage(ws, msg);
   });
   ws.send(JSON.stringify({ type: 'hello', role: ws._role }));
 });

@@ -444,6 +444,10 @@
   ];
   const DEFAULT_ALLOCATION = { 'custo-fixo': 30, conforto: 15, liberdade: 25, metas: 15, prazeres: 10, conhecimento: 5 };
   const bucketLabel = (id) => (BUCKETS.find((b) => b.id === id) || {}).label || id;
+  // Baldes ocultos do plano (não usados pela família). Mantidos no array BUCKETS
+  // por causa de índices posicionais (cores), mas filtrados na exibição/edição.
+  const HIDDEN_BUCKETS = new Set(['conforto', 'conhecimento']);
+  const ACTIVE_BUCKETS = BUCKETS.filter((b) => !HIDDEN_BUCKETS.has(b.id));
 
   window.BISA.screens['finance'] = {
     _el: null,
@@ -1034,6 +1038,14 @@
       const add = elt('button', 'fin-inc-add', '＋ Adicionar receita');
       add.onclick = () => this._openExtraIncome();
       card.appendChild(add);
+
+      // Trazer da conta em dólar (resgate p/ cobrir um custo imprevisto). Só
+      // aparece quando há uma reserva em US$ de onde tirar.
+      if ((this._objectives || []).some((o) => o.currency === 'USD')) {
+        const res = elt('button', 'fin-inc-add', '＋ Trazer do dólar');
+        res.onclick = () => this._openResgateDolar();
+        card.appendChild(res);
+      }
       wrap.appendChild(card);
     },
 
@@ -1328,6 +1340,100 @@
       });
     },
 
+    // Trazer dinheiro da conta em dólar para reais (ex.: cobrir um custo
+    // imprevisto sem mexer no orçamento do mês). Registra o R$ que entrou como
+    // receita do mês e desconta o valor em US$ do objetivo-fonte (a reserva em
+    // dólar). A cotação do resgate é editável — costuma diferir da padrão.
+    _openResgateDolar() {
+      this._closeItemEditor();
+      const usdObjs = (this._objectives || []).filter((o) => o.currency === 'USD');
+      let sourceId = usdObjs.length ? usdObjs[0].id : null;
+      const std = this._stdRate || 0;
+      const source = () => usdObjs.find((o) => o.id === sourceId) || null;
+
+      const overlay = elt('div', 'fin-amount-overlay');
+      const modal = elt('div', 'fin-item-modal');
+      overlay.appendChild(modal);
+      modal.appendChild(elt('div', 'fin-amount-title', 'Trazer do dólar para reais'));
+
+      const parseNum = (s) => { const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
+      // refresh é declaração (hoisted) — usada pelos campos abaixo já no closure.
+      function refresh() { resgateRefresh(); }
+      const numField = (labelText, val, ph) => {
+        const f = elt('div', 'fin-item-field');
+        f.appendChild(elt('label', 'fin-item-flabel', labelText));
+        const inp = elt('input', 'fin-item-inp');
+        inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = ph || '';
+        if (val != null) inp.value = String(val).replace('.', ',');
+        inp.oninput = () => { let v = inp.value.replace(/[^0-9,]/g, ''); const i = v.indexOf(','); if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, ''); inp.value = v; refresh(); };
+        f.appendChild(inp); modal.appendChild(f);
+        return inp;
+      };
+
+      // Fonte (objetivo em US$). Com mais de um, vira chips; sozinho, fica fixo.
+      if (usdObjs.length > 1) {
+        const fS = elt('div', 'fin-item-field'); fS.appendChild(elt('label', 'fin-item-flabel', 'Tirar de'));
+        const chips = elt('div', 'fin-chips'); const els = {};
+        usdObjs.forEach((o) => {
+          const c = elt('button', 'fin-chip' + (o.id === sourceId ? ' on' : ''), o.label);
+          onTap(c, () => { sourceId = o.id; Object.values(els).forEach((e) => e.classList.remove('on')); c.classList.add('on'); refresh(); });
+          els[o.id] = c; chips.appendChild(c);
+        });
+        fS.appendChild(chips); modal.appendChild(fS);
+      } else if (usdObjs.length === 1) {
+        const fS = elt('div', 'fin-item-field');
+        fS.appendChild(elt('label', 'fin-item-flabel', 'Tirar de'));
+        fS.appendChild(elt('div', 'muted', `${usdObjs[0].label} · US$ ${fmtNum(usdObjs[0].current || 0)}`));
+        modal.appendChild(fS);
+      }
+
+      const usdInp = numField('Valor em dólar (US$)', null, 'Ex: 200');
+      const rateInp = numField('Cotação do resgate (R$/US$)', std > 0 ? std : null, 'Ex: 5,40');
+      const descInp = (() => {
+        const f = elt('div', 'fin-item-field'); f.appendChild(elt('label', 'fin-item-flabel', 'Motivo (opcional)'));
+        const inp = elt('input', 'fin-item-inp'); inp.type = 'text'; inp.maxLength = 200; inp.placeholder = 'Ex: Dentista, conserto do carro';
+        f.appendChild(inp); modal.appendChild(f); return inp;
+      })();
+
+      const preview = elt('div', 'fin-amount-preview'); modal.appendChild(preview);
+      const resgateRefresh = () => {
+        const usd = parseNum(usdInp.value); const rate = parseNum(rateInp.value);
+        if (!(usd > 0) || !(rate > 0)) { preview.textContent = ''; return; }
+        const brlV = Math.round(usd * rate * 100) / 100;
+        let txt = `= ${brl(brlV)}`;
+        const src = source();
+        if (src) { const after = Math.max(0, (Number(src.current) || 0) - usd); txt += ` · sobra US$ ${fmtNum(after)} na ${src.label}`; }
+        preview.textContent = txt;
+      };
+      resgateRefresh();
+
+      const actions = elt('div', 'fin-item-actions');
+      const cancel = elt('button', 'fin-amount-cancel', 'Cancelar'); onTap(cancel, () => this._closeItemEditor());
+      const save = elt('button', 'btn', 'Trazer para reais');
+      onTap(save, async () => {
+        const usd = parseNum(usdInp.value); const rate = parseNum(rateInp.value);
+        if (!(usd > 0)) { BISA.toast('Informe o valor em dólar'); return; }
+        if (!(rate > 0)) { BISA.toast('Informe a cotação'); return; }
+        const brlV = Math.round(usd * rate * 100) / 100;
+        const src = source();
+        const desc = descInp.value.trim() || 'Resgate do dólar';
+        try {
+          await BISA.api('/finance/tx', { method: 'POST', json: { kind: 'income', amount: brlV, desc, category: 'resgate-dolar', date: todayISO() } });
+          if (src) {
+            const next = Math.max(0, Math.round(((Number(src.current) || 0) - usd) * 100) / 100);
+            await BISA.api('/finance/objectives', { method: 'PATCH', json: { id: src.id, current: next } });
+          }
+          BISA.toast(`Trouxe ${brl(brlV)} do dólar`); this._closeItemEditor(); this._render(true);
+        } catch (e) { BISA.toast(e.message || 'Erro ao trazer'); }
+      });
+      actions.append(cancel, save); modal.appendChild(actions);
+
+      overlay.onclick = (ev) => { if (ev.target === overlay) this._closeItemEditor(); };
+      this._itemKeyHandler = (ev) => { if (ev.key === 'Escape') this._closeItemEditor(); };
+      document.addEventListener('keydown', this._itemKeyHandler);
+      document.body.appendChild(overlay); this._itemOverlay = overlay; usdInp.focus();
+    },
+
     // Popover do "Ordenar", ancorado no botão — ideal p/ Pencil/ponteiro no
     // iPad: abre coladinho onde tocou, com pouco deslocamento. Opções em duas
     // linhas com ✓ na ativa + a opção de reordenar manualmente (arrastar),
@@ -1581,7 +1687,7 @@
       const items = (profile.budget || []).filter((b) => b.kind !== 'income');
       this._tagDefs = profile.tagDefs || []; // usado pelo editor de item e gerenciador de tags
 
-      BUCKETS.forEach((bk) => {
+      ACTIVE_BUCKETS.forEach((bk) => {
         const list = items.filter((b) => (b.bucket || 'custo-fixo') === bk.id);
         const card = elt('div', 'card fin-manage-card');
         const h = elt('div', 'fin-manage-head');
@@ -1646,7 +1752,7 @@
       fBucket.appendChild(elt('label', 'fin-item-flabel', 'Categoria'));
       const chips = elt('div', 'fin-chips');
       const chipEls = {};
-      BUCKETS.forEach((bk) => {
+      ACTIVE_BUCKETS.forEach((bk) => {
         const c = elt('button', 'fin-chip' + (bk.id === bucket ? ' on' : ''), bk.label);
         c.onclick = () => {
           bucket = bk.id;
@@ -1822,7 +1928,7 @@
         scopeEls.push(c); scopeChips.appendChild(c);
       };
       mkScope(null, 'Todas');
-      BUCKETS.forEach((bk) => mkScope(bk.id, bk.label));
+      ACTIVE_BUCKETS.forEach((bk) => mkScope(bk.id, bk.label));
       fScope.appendChild(scopeChips); modal.appendChild(fScope);
 
       const addBtn = elt('button', 'fin-inc-add', '＋ Adicionar tag');
@@ -1889,7 +1995,7 @@
 
       const card = elt('div', 'card');
 
-      const totalPct = () => BUCKETS.reduce((s, b) => s + (Number(alloc[b.id]) || 0), 0);
+      const totalPct = () => ACTIVE_BUCKETS.reduce((s, b) => s + (Number(alloc[b.id]) || 0), 0);
       const meta = elt('div', 'fin-env-meta');
       meta.innerHTML = `<span>Renda do mês <strong>${brl(renda)}</strong></span>`;
       const tp = totalPct();
@@ -1906,11 +2012,11 @@
       // refs dos sliders (modo edição) p/ redistribuir e salvar em lote
       const sliders = [];
       const persistAll = async () => {
-        try { for (const s of BUCKETS) await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: s.id, pct: Number(alloc[s.id]) || 0 } }); }
+        try { for (const s of ACTIVE_BUCKETS) await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: s.id, pct: Number(alloc[s.id]) || 0 } }); }
         catch (e) { BISA.toast(e.message || 'Erro ao salvar %'); }
       };
 
-      BUCKETS.forEach((b) => {
+      ACTIVE_BUCKETS.forEach((b) => {
         const pct = Number(alloc[b.id]) || 0;
         const gasto = Math.round((gastoBy[b.id] || 0) * 100) / 100;
         const devo = Math.round(renda * pct) / 100;
@@ -1993,19 +2099,19 @@
       if (!(renda > 0)) { BISA.toast('Sem renda no mês para calcular'); return; }
       const target = Math.max(0, Math.min(100, Math.round(((gastoBy[catId] || 0) / renda) * 100)));
       const remaining = 100 - target;
-      const others = BUCKETS.filter((b) => b.id !== catId);
+      const others = ACTIVE_BUCKETS.filter((b) => b.id !== catId);
       const othersSum = others.reduce((s, o) => s + (Number(alloc[o.id]) || 0), 0);
       const next = { [catId]: target };
       if (othersSum > 0) others.forEach((o) => { next[o.id] = Math.round(((Number(alloc[o.id]) || 0) * remaining) / othersSum); });
       else others.forEach((o) => { next[o.id] = Math.round(remaining / others.length); });
       // corrige arredondamento para somar exatamente 100 (joga a diferença no maior "outro")
-      const sum = BUCKETS.reduce((s, b) => s + next[b.id], 0);
+      const sum = ACTIVE_BUCKETS.reduce((s, b) => s + next[b.id], 0);
       if (sum !== 100 && others.length) {
         const big = others.slice().sort((a, b) => next[b.id] - next[a.id])[0];
         next[big.id] = Math.max(0, next[big.id] + (100 - sum));
       }
       try {
-        for (const b of BUCKETS) await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: b.id, pct: next[b.id] } });
+        for (const b of ACTIVE_BUCKETS) await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: b.id, pct: next[b.id] } });
         BISA.toast(`${bucketLabel(catId)} ajustado para ${target}%`);
         this._render(true);
       } catch (e) { BISA.toast(e.message || 'Erro ao ajustar'); }

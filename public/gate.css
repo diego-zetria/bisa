@@ -1,0 +1,106 @@
+/* gate.css — BASE compartilhada dos selos de entrada (ver gate-core.js).
+   Reset do container, fallback de token, e as transições de abertura (flood +
+   dissolve + portas). A cena de cada tema vive em gates/<nome>.css.
+   O brilho usa --accent (cor do tema), default ciano. */
+
+#gate.gate {
+  --accent: #6fe6ff;
+  inset: 0; padding: 0; overflow: hidden; cursor: default;
+  -webkit-user-select: none; user-select: none;
+  align-items: stretch; justify-content: stretch;   /* temas posicionam em camadas absolutas */
+}
+
+/* ---- fallback (sem gate-core/tema, ou navegador antigo): input de token ---- */
+#gate-fallback { display: none; flex-direction: column; align-items: center; gap: 14px; }
+#gate.fallback { display: flex; background: var(--bg); }
+#gate.fallback #gate-fallback { display: flex; }
+
+/* ---- abertura: brilho que invade a tela ---- */
+#gate .gate-flood {
+  position: absolute; inset: 0; z-index: 40; pointer-events: none; opacity: 0;
+  background: radial-gradient(closest-side at 50% 50%,
+    #ffffff 0%, color-mix(in srgb, var(--accent) 80%, white) 22%,
+    color-mix(in srgb, var(--accent) 60%, transparent) 48%, transparent 72%);
+}
+#gate.opening .gate-flood { animation: gate-flood 1.6s ease-in forwards; }
+@keyframes gate-flood { 0%{opacity:0; transform:scale(.2)} 45%{opacity:1} 100%{opacity:1; transform:scale(1.5)} }
+
+/* o gate inteiro dissolve no fim (animationend 'gate-dissolve' encerra a cena) */
+#gate.opening { animation: gate-dissolve 1.7s ease-in forwards; }
+@keyframes gate-dissolve { 0%,55%{opacity:1} 100%{opacity:0} }
+
+/* variantes de brilho por estilo de reveal */
+#gate.reveal-warp .gate-flood { animation-name: gate-flood-warp; }
+@keyframes gate-flood-warp { 0%{opacity:0; transform:scale(.05)} 40%{opacity:1} 100%{opacity:1; transform:scale(2.6)} }
+#gate.reveal-bloom .gate-flood {
+  background: radial-gradient(closest-side at 50% 50%, transparent 30%, color-mix(in srgb, var(--accent) 70%, white) 46%, transparent 60%);
+  animation-name: gate-flood-bloom;
+}
+@keyframes gate-flood-bloom { 0%{opacity:0; transform:scale(.1)} 30%{opacity:1} 100%{opacity:0; transform:scale(3)} }
+#gate.reveal-glitch .gate-flood { animation-name: gate-flood-glitch; }
+@keyframes gate-flood-glitch { 0%,10%{opacity:0} 12%{opacity:.7} 16%{opacity:.1} 24%{opacity:.9} 30%{opacity:.2} 50%{opacity:1} 100%{opacity:1; transform:scale(1.4)} }
+
+/* portas: duas metades de um [data-slab] se afastam em 3D */
+#gate .gate-half {
+  z-index: 30; will-change: transform;
+  background: linear-gradient(160deg, #151a22, #06080d);
+  box-shadow: 0 40px 90px -30px rgba(0,0,0,.9);
+}
+#gate .gate-half.l { transform-origin: left center;  border-right: 1px solid color-mix(in srgb, var(--accent) 70%, white); }
+#gate .gate-half.r { transform-origin: right center; border-left: 1px solid color-mix(in srgb, var(--accent) 70%, white); }
+#gate.opening .gate-half.l { animation: gate-door-l 1.6s cubic-bezier(.6,0,.2,1) forwards; }
+#gate.opening .gate-half.r { animation: gate-door-r 1.6s cubic-bezier(.6,0,.2,1) forwards; }
+@keyframes gate-door-l { to { transform: translateX(-130%) rotateY(38deg); } }
+@keyframes gate-door-r { to { transform: translateX(130%) rotateY(-38deg); } }
+
+/* ---- botão de fechar a prévia (tela de Ajustes) ---- */
+#gate .gate-close {
+  position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; z-index: 60;
+  background: rgba(8,10,16,.55); color: #fff; border: 1px solid rgba(255,255,255,.28);
+  border-radius: 999px; padding: 8px 16px; min-height: 40px; font-size: .82rem; letter-spacing: .04em;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); cursor: pointer;
+}
+#gate.opening .gate-close { display: none; }
+
+/* ---- ajuda discreta: "?" fixo + cartão de instrução ---- */
+#gate .gate-help-btn {
+  position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 55;
+  width: 30px; height: 30px; border-radius: 50%; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,.04);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, white);
+  font-size: .9rem; line-height: 1; cursor: pointer; opacity: .26;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  transition: opacity .25s ease, transform .2s ease, box-shadow .25s ease;
+}
+#gate .gate-help-btn:hover, #gate .gate-help-btn:focus-visible {
+  opacity: .95; outline: none; box-shadow: 0 0 16px -2px var(--accent);
+}
+#gate.opening .gate-help-btn { display: none; }
+
+#gate .gate-help-panel {
+  position: fixed; inset: 0; z-index: 56; display: none; padding: 24px;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,.5); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+}
+#gate .gate-help-panel.show { display: flex; }
+#gate .gate-help-card {
+  max-width: 360px; width: 100%; padding: 22px 22px 18px; color: #eef3f6;
+  background: rgba(15,18,24,.94);
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, rgba(255,255,255,.16));
+  border-radius: 16px; box-shadow: 0 20px 60px -20px rgba(0,0,0,.85), 0 0 40px -12px var(--accent);
+  animation: gate-help-in .25s ease;
+}
+@keyframes gate-help-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+#gate .gate-help-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 10px; color: color-mix(in srgb, var(--accent) 72%, white); }
+#gate .gate-help-steps { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 7px; font-size: .92rem; line-height: 1.42; }
+#gate .gate-help-tip { margin-top: 12px; font-size: .82rem; opacity: .68; }
+#gate .gate-help-close { margin-top: 16px; width: 100%; min-height: 42px; border: none; border-radius: 10px; cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 76%, black); color: #fff; font-weight: 600; font-size: .92rem; }
+
+/* ---- acessibilidade ---- */
+@media (prefers-reduced-motion: reduce) {
+  #gate.opening { animation-duration: .35s; }
+  #gate .gate-half { display: none; }
+}

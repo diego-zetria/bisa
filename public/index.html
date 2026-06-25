@@ -11,15 +11,31 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <title>bisa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Cinzel (wordmark do selo) carregado sem bloquear o parse: se a rede cair,
+     cai no serif local na hora, sem travar a tela inicial. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&display=swap" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/biso.css">
+<link rel="stylesheet" href="/gate.css">
+<link rel="stylesheet" href="/gates/monolith.css">
+<link rel="stylesheet" href="/gates/biblioteca.css">
+<link rel="stylesheet" href="/gates/cosmos.css">
+<link rel="stylesheet" href="/gates/zen.css">
+<link rel="stylesheet" href="/gates/cyberdeck.css">
 </head>
 <body>
 <div id="gate">
-  <div style="font-size:2rem">🌿</div>
-  <h1 style="margin:0">bisa</h1>
-  <p class="muted">Cole o link com seu código de acesso para entrar.</p>
-  <input id="gate-token" placeholder="código de acesso" autocomplete="off" style="max-width:320px">
-  <button class="btn" id="gate-go">Entrar</button>
+  <!-- O "selo" (monólito de obsidiana) é construído por /gate.js. Fallback,
+       sem esse JS ou em navegador antigo: input de código simples. -->
+  <div id="gate-fallback">
+    <div style="font-size:2rem">🌿</div>
+    <h1 style="margin:0">bisa</h1>
+    <p class="muted">Cole o link com seu código de acesso para entrar.</p>
+    <input id="gate-token" placeholder="código de acesso" autocomplete="off" style="max-width:320px">
+    <button class="btn" id="gate-go">Entrar</button>
+  </div>
 </div>
 
 <div id="app">
@@ -29,6 +45,7 @@
     <button data-route="journal"><span class="ic">📔</span>Diário</button>
     <button data-route="world"><span class="ic">🌐</span>Mundo</button>
     <button data-route="chat"><span class="ic">💬</span>Claude</button>
+    <button data-route="biso"><span class="ic">🛠️</span>Biso</button>
   </nav>
 </div>
 
@@ -40,12 +57,22 @@
 <script src="/vendor/force-graph.min.js"></script>
 
 <script src="/app.js"></script>
+<script src="/gate-core.js"></script>
+<script src="/gates/monolith.js"></script>
+<script src="/gates/biblioteca.js"></script>
+<script src="/gates/cosmos.js"></script>
+<script src="/gates/zen.js"></script>
+<script src="/gates/cyberdeck.js"></script>
 <script src="/screens/hub.js"></script>
 <script src="/screens/journal.js"></script>
 <script src="/screens/world.js"></script>
 <script src="/screens/chat.js"></script>
 <script src="/screens/finance.js"></script>
 <script src="/screens/sentinel.js"></script>
+<script src="/screens/ajustes.js"></script>
+<script src="/screens/notas.js"></script>
+<script src="/screens/canvas.js"></script>
+<script src="/screens/biso.js"></script>
 <script src="/annotate.js"></script>
 <script>window.BISA && window.BISA.start && window.BISA.start();</script>
 </body>

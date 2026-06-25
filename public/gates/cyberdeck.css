@@ -1,0 +1,109 @@
+/* gates/cyberdeck.css — cena do tema "Cyberdeck". Escopo: #gate.gate-cyberdeck.
+   Reveal/flood/glitch/fallback ficam na base (gate.css).
+   Estética: terminal CRT néon — verde #39ff9d + ciano, chão em grade. */
+
+#gate.gate-cyberdeck {
+  --neon: #39ff9d; --cyan: #6fe6ff; --red: #ff4d5e;
+  --ink: #d7ffe9; --dim: rgba(57,255,157,.45);
+  background:
+    radial-gradient(120% 80% at 50% 18%, rgba(57,255,157,.06) 0%, transparent 52%),
+    radial-gradient(140% 100% at 50% 100%, #04130d 0%, #020806 60%, #010403 100%);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* chão em grade (canvas) */
+#gate.gate-cyberdeck .grid { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; }
+
+/* ---- camadas de overlay CRT ---- */
+#gate.gate-cyberdeck .scanlines { position: absolute; inset: -2px; z-index: 8; pointer-events: none; opacity: .5;
+  background: repeating-linear-gradient(to bottom, rgba(57,255,157,.05) 0 1px, transparent 1px 3px);
+  mix-blend-mode: screen; animation: cyber-scan 8s linear infinite; }
+@keyframes cyber-scan { from { transform: translateY(0); } to { transform: translateY(3px); } }
+#gate.gate-cyberdeck .noise { position: absolute; inset: 0; z-index: 9; pointer-events: none; opacity: .07; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: cyber-noise 1.1s steps(3) infinite; }
+@keyframes cyber-noise { 0%{transform:translate(0,0)} 33%{transform:translate(-3px,2px)} 66%{transform:translate(2px,-2px)} 100%{transform:translate(0,0)} }
+#gate.gate-cyberdeck .vignette { position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  background: radial-gradient(130% 110% at 50% 45%, transparent 50%, rgba(0,0,0,.6) 100%); }
+
+/* ---- HUD / deck ---- */
+#gate.gate-cyberdeck .deck { position: absolute; inset: 0; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: clamp(20px,5vh,48px) 6vw; gap: clamp(14px,3vh,28px); }
+
+#gate.gate-cyberdeck .topbar { position: absolute; top: clamp(16px,4vh,34px); left: 0; right: 0;
+  display: flex; justify-content: space-between; align-items: baseline; padding: 0 clamp(18px,6vw,56px);
+  font-size: clamp(13px,1.8vmin,16px); letter-spacing: .14em; }
+#gate.gate-cyberdeck .brand { color: var(--neon); font-weight: 700;
+  text-shadow: 0 0 8px rgba(57,255,157,.55), 0 0 22px rgba(57,255,157,.25);
+  animation: cyber-flick 5.5s steps(1) infinite; }
+@keyframes cyber-flick { 0%,96%,100%{opacity:1} 97%{opacity:.4} 98%{opacity:.85} 99%{opacity:.3} }
+#gate.gate-cyberdeck .brand .cur { animation: cyber-cursor 1s steps(1) infinite; }
+@keyframes cyber-cursor { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+#gate.gate-cyberdeck .ver { color: var(--dim); font-size: .82em; letter-spacing: .08em; }
+
+/* ---- núcleo: nó de energia + anel ---- */
+#gate.gate-cyberdeck .core { display: flex; flex-direction: column; align-items: center; gap: clamp(14px,3vh,26px); }
+#gate.gate-cyberdeck .node { --glow: .25; position: relative; width: clamp(160px,34vmin,240px); aspect-ratio: 1/1;
+  touch-action: none; cursor: pointer; outline: none; }
+#gate.gate-cyberdeck .node:focus-visible { filter: drop-shadow(0 0 6px var(--cyan)); }
+
+#gate.gate-cyberdeck .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+#gate.gate-cyberdeck .ring .track { fill: none; stroke: rgba(57,255,157,.14); stroke-width: 4; }
+#gate.gate-cyberdeck .ring .prog { fill: none; stroke: var(--neon); stroke-width: 5; stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(57,255,157,.9)); transition: stroke .2s ease; }
+#gate.gate-cyberdeck .node.abort .ring .prog { stroke: var(--red); filter: drop-shadow(0 0 8px rgba(255,77,94,.9)); }
+
+#gate.gate-cyberdeck .orb { position: absolute; inset: 22%; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(57,255,157,calc(.10 + var(--glow) * .35)) 0%, rgba(57,255,157,.04) 60%, transparent 72%),
+    radial-gradient(circle at 50% 50%, #04140d 0%, #020a07 100%);
+  border: 1px solid rgba(57,255,157,calc(.25 + var(--glow) * .5));
+  box-shadow: 0 0 calc(8px + var(--glow) * 46px) rgba(57,255,157,calc(.15 + var(--glow) * .55)),
+    inset 0 0 30px rgba(57,255,157,calc(.05 + var(--glow) * .2));
+  transition: box-shadow .12s linear, border-color .12s linear; }
+#gate.gate-cyberdeck .node.charging .orb { animation: cyber-pulse .5s ease-in-out infinite alternate; }
+@keyframes cyber-pulse { to { transform: scale(1.018); } }
+#gate.gate-cyberdeck .node.abort .orb { border-color: rgba(255,77,94,.6); box-shadow: 0 0 28px rgba(255,77,94,.5), inset 0 0 24px rgba(255,77,94,.25); }
+#gate.gate-cyberdeck .node.done .orb { animation: cyber-flash .35s ease-out; }
+@keyframes cyber-flash { 0%{box-shadow:0 0 60px rgba(255,255,255,.9), inset 0 0 40px rgba(255,255,255,.6);} 100%{box-shadow:0 0 50px rgba(57,255,157,.7), inset 0 0 24px rgba(57,255,157,.3);} }
+
+#gate.gate-cyberdeck .pct { font-size: clamp(22px,5vmin,34px); font-weight: 700; letter-spacing: .04em;
+  color: var(--neon); text-shadow: 0 0 calc(4px + var(--glow) * 16px) rgba(57,255,157,.8);
+  font-variant-numeric: tabular-nums; }
+#gate.gate-cyberdeck .node.abort .pct { color: var(--red); text-shadow: 0 0 12px rgba(255,77,94,.8); }
+
+#gate.gate-cyberdeck .label { font-size: clamp(13px,2vmin,16px); letter-spacing: .2em; text-transform: uppercase;
+  color: var(--cyan); text-shadow: 0 0 10px rgba(111,230,255,.4); min-height: 1.2em; transition: color .2s ease; }
+#gate.gate-cyberdeck .node.abort ~ .label, #gate.gate-cyberdeck .core .label.err { color: var(--red); }
+
+/* ---- log do boot ---- */
+#gate.gate-cyberdeck .log { width: min(520px, 78vw); min-height: clamp(96px,18vh,150px);
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 3px;
+  font-size: clamp(11px,1.7vmin,14px); letter-spacing: .04em; line-height: 1.5;
+  color: var(--neon); text-shadow: 0 0 6px rgba(57,255,157,.4);
+  border-left: 2px solid rgba(57,255,157,.3); padding-left: 12px; overflow: hidden; }
+#gate.gate-cyberdeck .log .ln { opacity: 0; animation: cyber-typein .18s ease-out forwards; white-space: nowrap; }
+@keyframes cyber-typein { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+#gate.gate-cyberdeck .log .ln.ok { color: var(--neon); font-weight: 700; text-shadow: 0 0 12px rgba(57,255,157,.7); }
+#gate.gate-cyberdeck .log .ln.err { color: var(--red); text-shadow: 0 0 10px rgba(255,77,94,.6); }
+
+/* ---- hint após 2 abortos ---- */
+#gate.gate-cyberdeck .hint { position: absolute; bottom: clamp(18px,5vh,40px); left: 0; right: 0; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .5s ease; }
+#gate.gate-cyberdeck .hint.show { opacity: 1; pointer-events: auto; }
+#gate.gate-cyberdeck .hint button { font: inherit; font-size: clamp(11px,1.7vmin,14px); letter-spacing: .12em;
+  color: var(--dim); background: transparent; border: 1px solid rgba(57,255,157,.22);
+  padding: 7px 16px; border-radius: 4px; cursor: pointer; transition: color .2s ease, border-color .2s ease; }
+#gate.gate-cyberdeck .hint button:hover { color: var(--neon); border-color: rgba(57,255,157,.6); }
+
+/* ---- acessibilidade: sem flicker/scanline animados, grade estática ---- */
+@media (prefers-reduced-motion: reduce) {
+  #gate.gate-cyberdeck .scanlines,
+  #gate.gate-cyberdeck .noise { animation: none; }
+  #gate.gate-cyberdeck .brand { animation: none; }
+  #gate.gate-cyberdeck .brand .cur { animation: none; }
+  #gate.gate-cyberdeck .node.charging .orb { animation: none; }
+}

@@ -1,0 +1,64 @@
+/* gates/cosmos.css — cena do tema "Cosmos". Escopo: #gate.gate-cosmos.
+   Reveal/flood/portas/fallback ficam na base (gate.css). */
+
+#gate.gate-cosmos {
+  /* vazio profundo: índigo → violeta → quase-preto, com leve clareira ao centro */
+  background:
+    radial-gradient(120% 100% at 50% 42%, #1a1330 0%, #120c26 34%, #0a0718 64%, #050410 100%);
+  color: #d9d2f2;
+}
+
+/* o céu (starfield + nebulosa + linhas/rastro) é tudo desenhado no canvas */
+#gate.gate-cosmos .sky {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: 1;
+}
+
+/* superfície única de ponteiro cobrindo a tela inteira */
+#gate.gate-cosmos .surface {
+  position: absolute; inset: 0; z-index: 3; touch-action: none; cursor: crosshair;
+}
+
+#gate.gate-cosmos .wordmark {
+  position: absolute; top: clamp(34px, 9vh, 88px); left: 0; right: 0; z-index: 4;
+  text-align: center; pointer-events: none;
+  font-family: 'Cinzel', 'Optima', 'Trajan Pro', Georgia, serif; font-weight: 600;
+  font-size: clamp(34px, 8vmin, 60px); letter-spacing: .46em; text-indent: .46em;
+  color: #ece6ff;
+  text-shadow:
+    0 0 1px rgba(0,0,0,.8), 0 2px 14px rgba(120,90,230,.45),
+    0 0 30px rgba(169,139,255,.40), 0 0 60px rgba(190,110,235,.25);
+  animation: gate-word-glow 6s ease-in-out infinite;
+}
+@keyframes gate-word-glow {
+  0%, 100% { opacity: .92; text-shadow: 0 0 1px rgba(0,0,0,.8), 0 2px 14px rgba(120,90,230,.4), 0 0 26px rgba(169,139,255,.32), 0 0 54px rgba(190,110,235,.2); }
+  50%      { opacity: 1;   text-shadow: 0 0 1px rgba(0,0,0,.8), 0 2px 16px rgba(130,100,240,.5), 0 0 40px rgba(190,160,255,.5),  0 0 80px rgba(210,130,245,.32); }
+}
+
+#gate.gate-cosmos .label {
+  position: absolute; bottom: clamp(58px, 13vh, 120px); left: 0; right: 0; z-index: 4;
+  text-align: center; pointer-events: none;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: clamp(10px, 1.6vmin, 13px); letter-spacing: .36em; text-indent: .36em; text-transform: uppercase;
+  color: rgba(196,180,245,.62); transition: color .35s ease;
+}
+#gate.gate-cosmos .label.lit { color: #e9ddff; text-shadow: 0 0 14px rgba(190,160,255,.7); }
+
+#gate.gate-cosmos .vignette {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: radial-gradient(135% 115% at 50% 46%, transparent 48%, rgba(2,1,10,.62) 100%);
+}
+
+#gate.gate-cosmos .hint {
+  position: absolute; bottom: clamp(20px, 5vh, 42px); left: 0; right: 0; z-index: 5; text-align: center;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 11px; letter-spacing: .12em;
+  color: rgba(180,165,225,.32); opacity: 0; pointer-events: none; transition: opacity .6s ease;
+}
+#gate.gate-cosmos .hint.show { opacity: 1; pointer-events: auto; }
+#gate.gate-cosmos .hint button {
+  background: none; border: none; color: rgba(200,180,255,.72); text-decoration: underline;
+  text-underline-offset: 3px; font: inherit; letter-spacing: inherit; cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #gate.gate-cosmos .wordmark { animation: none; }
+}

@@ -634,6 +634,13 @@
     camBtn.addEventListener('click', () => BISA.go('sentinel'));
     right.appendChild(camBtn);
 
+    /* Botão Ajustes (tela de entrada / selo) */
+    const cfgBtn = el('button', 'btn ghost block');
+    cfgBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    cfgBtn.textContent = '⚙️ Ajustes';
+    cfgBtn.addEventListener('click', () => BISA.go('ajustes'));
+    right.appendChild(cfgBtn);
+
     grid.append(left, right);
 
     /* ─── Refresh function ─── */

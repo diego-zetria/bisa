@@ -1,0 +1,266 @@
+/* biso.css — tela "Biso" (workstation Claude Code dentro do bisa), touch/Pencil.
+   Variáveis --biso-* com fallback p/ os tokens globais; temas trocam só essas vars
+   via [data-theme] no .biso-root → personalização sem tocar no resto do app. */
+
+.biso-root {
+  --biso-bg: var(--bg);
+  --biso-surface: var(--surface);
+  --biso-surface-2: var(--surface-2);
+  --biso-ink: var(--ink);
+  --biso-ink-soft: var(--ink-soft);
+  --biso-line: var(--line);
+  --biso-primary: var(--primary);
+  --biso-primary-ink: var(--primary-ink);
+  --biso-accent: var(--accent-soft);
+  --biso-positive: var(--positive);
+  --biso-negative: var(--negative);
+  --biso-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+  background: var(--biso-bg); color: var(--biso-ink);
+}
+
+/* ---- Temas (overrides locais) ---- */
+.biso-root[data-theme="matrix"] {
+  --biso-bg:#0a0e0a; --biso-surface:#0f150f; --biso-surface-2:#13201a;
+  --biso-ink:#cdeccd; --biso-ink-soft:#6f9c6f; --biso-line:#1d2e1d;
+  --biso-primary:#39d353; --biso-primary-ink:#08120a; --biso-accent:#16341f;
+  --biso-positive:#39d353; --biso-negative:#e0533d;
+}
+.biso-root[data-theme="escuro"] {
+  --biso-bg:#16181c; --biso-surface:#1e2127; --biso-surface-2:#262a32;
+  --biso-ink:#e6e8ec; --biso-ink-soft:#9aa0ab; --biso-line:#30343d;
+  --biso-primary:#7aa2f7; --biso-primary-ink:#0b1020; --biso-accent:#232a3a;
+  --biso-positive:#7ee0a0; --biso-negative:#f7768e;
+}
+.biso-root[data-theme="sepia"] {
+  --biso-bg:#f4ecd8; --biso-surface:#fbf5e6; --biso-surface-2:#ece0c6;
+  --biso-ink:#433422; --biso-ink-soft:#8a755a; --biso-line:#ddcdab;
+  --biso-primary:#9a6a3a; --biso-primary-ink:#fbf5e6; --biso-accent:#e7d8b8;
+}
+.biso-root[data-theme="contraste"] {
+  --biso-bg:#000; --biso-surface:#0a0a0a; --biso-surface-2:#161616;
+  --biso-ink:#fff; --biso-ink-soft:#cfcfcf; --biso-line:#444;
+  --biso-primary:#ffd400; --biso-primary-ink:#000; --biso-accent:#222;
+}
+
+/* ---- Header + abas de sub-view ---- */
+.biso-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--biso-surface);
+  border-bottom: 1px solid var(--biso-line); flex-shrink: 0;
+}
+.biso-title { font-weight: 700; font-size: 1.05rem; color: var(--biso-ink); }
+.biso-title small { color: var(--biso-ink-soft); font-weight: 500; font-size: .72rem; }
+.biso-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.biso-tab {
+  background: none; border: 1px solid transparent; color: var(--biso-ink-soft);
+  border-radius: 999px; padding: 0 14px; min-height: 40px; white-space: nowrap;
+  font-size: .9rem; flex-shrink: 0;
+}
+.biso-tab.active { background: var(--biso-accent); color: var(--biso-ink); border-color: var(--biso-line); }
+.biso-theme-btn {
+  background: none; border: 1px solid var(--biso-line); color: var(--biso-ink);
+  border-radius: 50%; min-width: 40px; min-height: 40px; font-size: 1.1rem; flex-shrink: 0;
+}
+
+/* ---- Área de conteúdo (uma sub-view por vez) ---- */
+.biso-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.biso-scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px clamp(12px,3vw,28px); }
+
+/* ---- Chat ---- */
+.biso-chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.biso-msgs { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 16px 12px 8px; display: flex; flex-direction: column; gap: 10px; }
+.biso-bubble-wrap { display: flex; flex-direction: column; max-width: min(86%, 680px); }
+.biso-bubble-wrap.user { align-self: flex-end; align-items: flex-end; }
+.biso-bubble-wrap.assistant { align-self: flex-start; align-items: flex-start; }
+.biso-bubble { border-radius: 18px; padding: 10px 14px; line-height: 1.55; font-size: .97rem; word-break: break-word; }
+.biso-bubble-wrap.user .biso-bubble { background: var(--biso-primary); color: var(--biso-primary-ink); border-bottom-right-radius: 4px; }
+.biso-bubble-wrap.assistant .biso-bubble { background: var(--biso-surface); border: 1px solid var(--biso-line); color: var(--biso-ink); border-bottom-left-radius: 4px; }
+.biso-bubble p { margin: 0 0 .5em; } .biso-bubble p:last-child { margin-bottom: 0; }
+.biso-bubble ul, .biso-bubble ol { margin: .3em 0 .3em 1.4em; padding: 0; }
+.biso-bubble code { background: var(--biso-surface-2); border-radius: 4px; padding: 1px 5px; font-size: .88em; font-family: var(--biso-mono); }
+.biso-bubble pre { background: var(--biso-surface-2); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-size: .84em; font-family: var(--biso-mono); }
+.biso-bubble pre code { background: none; padding: 0; }
+.biso-bubble a { color: var(--biso-primary); }
+.biso-tool-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--biso-surface-2);
+  border: 1px solid var(--biso-line); border-radius: 999px; padding: 3px 10px; font-size: .78rem;
+  color: var(--biso-ink-soft); margin-top: 6px; font-family: var(--biso-mono); }
+.biso-tool-chip.done { color: var(--biso-positive); }
+.biso-error-line { align-self: center; background: var(--biso-surface-2); color: var(--biso-negative);
+  border-radius: 10px; padding: 6px 14px; font-size: .88rem; }
+.biso-cursor { display: inline-block; width: 2px; height: 1em; background: var(--biso-primary);
+  border-radius: 1px; margin-left: 2px; vertical-align: text-bottom; animation: biso-blink .75s step-end infinite; }
+@keyframes biso-blink { 50% { opacity: 0; } }
+
+.biso-quick { display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 12px 4px; }
+.biso-quick-chip { background: var(--biso-surface); border: 1px solid var(--biso-line); border-radius: 999px;
+  padding: 9px 16px; font-size: .88rem; color: var(--biso-ink); min-height: var(--tap); display: flex; align-items: center; }
+
+/* Compositor */
+.biso-composer { flex-shrink: 0; background: var(--biso-surface); border-top: 1px solid var(--biso-line);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+.biso-composer-row { display: flex; align-items: flex-end; gap: 8px; }
+.biso-textarea { flex: 1; resize: none; min-height: var(--tap); max-height: 180px; overflow-y: auto;
+  border-radius: 20px; padding: 10px 14px; font-size: .97rem; line-height: 1.45;
+  border: 1px solid var(--biso-line); background: var(--biso-surface-2); color: var(--biso-ink); width: auto; }
+.biso-textarea:focus { outline: none; border-color: var(--biso-primary); }
+.biso-icon-btn { background: none; border: none; color: var(--biso-ink-soft); font-size: 1.2rem;
+  min-width: var(--tap); min-height: var(--tap); border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; }
+.biso-icon-btn.active { color: var(--biso-negative); }
+.biso-send-btn { background: var(--biso-primary); color: var(--biso-primary-ink); border: none; border-radius: 50%;
+  min-width: var(--tap); min-height: var(--tap); font-size: 1.1rem; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; }
+.biso-send-btn:disabled { opacity: .45; }
+.biso-interrupt-btn { background: none; border: 1px solid var(--biso-negative); color: var(--biso-negative);
+  border-radius: 999px; padding: 0 14px; min-height: 36px; font-size: .82rem; font-weight: 600; flex-shrink: 0; }
+
+/* ---- Listas (Diário / Buscar / GAIN) ---- */
+.biso-card { background: var(--biso-surface); border: 1px solid var(--biso-line); border-radius: var(--radius);
+  padding: 14px; margin-bottom: 12px; }
+.biso-card h3 { margin: 0 0 8px; font-size: .95rem; }
+.biso-sec-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--biso-ink-soft);
+  margin: 14px 2px 6px; font-weight: 600; }
+.biso-li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--biso-line); }
+.biso-li:last-child { border-bottom: none; }
+.biso-li .t { color: var(--biso-ink-soft); font-variant-numeric: tabular-nums; font-size: .82rem; min-width: 44px; }
+.biso-check { width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--biso-line);
+  background: var(--biso-surface); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+.biso-check.done { background: var(--biso-primary); border-color: var(--biso-primary); color: var(--biso-primary-ink); }
+.biso-input { background: var(--biso-surface-2); border: 1px solid var(--biso-line); color: var(--biso-ink);
+  border-radius: 10px; padding: 11px 13px; width: 100%; min-height: var(--tap); font-size: 1rem; }
+.biso-btn { background: var(--biso-primary); color: var(--biso-primary-ink); border: none; border-radius: 10px;
+  padding: 0 16px; min-height: var(--tap); font-weight: 600; }
+.biso-btn.ghost { background: var(--biso-surface-2); color: var(--biso-ink); border: 1px solid var(--biso-line); }
+.biso-muted { color: var(--biso-ink-soft); }
+
+/* GAIN barras */
+.biso-bar-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.biso-bar { height: 14px; border-radius: 7px; background: var(--biso-primary); min-width: 2px; }
+.biso-bar-bg { flex: 1; background: var(--biso-surface-2); border-radius: 7px; overflow: hidden; }
+
+/* ---- Arquivos (duas colunas em telas largas) ---- */
+.biso-files { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.biso-files-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--biso-line);
+  background: var(--biso-surface); flex-shrink: 0; }
+.biso-files-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+@media (min-width: 900px) { .biso-files-body { grid-template-columns: 300px 1fr; } }
+.biso-tree { overflow-y: auto; -webkit-overflow-scrolling: touch; border-right: 1px solid var(--biso-line); }
+.biso-tree .biso-li { padding: 11px 14px; cursor: pointer; }
+.biso-fileview { overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.biso-fileview pre { flex: 1; overflow: auto; margin: 0; padding: 14px; font-family: var(--biso-mono); font-size: .85rem; }
+.biso-editor { flex: 1; width: 100%; border: none; resize: none; padding: 14px; font-family: var(--biso-mono);
+  font-size: .85rem; background: var(--biso-bg); color: var(--biso-ink); line-height: 1.5; }
+.biso-editor:focus { outline: none; }
+
+/* ---- Caderno (notebook, write-first) ---- */
+.biso-nb { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.biso-nb-scroll {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 0 28px;
+  /* papel pautado: linha a cada 32px (casa com o line-height das entradas) */
+  background-image: repeating-linear-gradient(transparent 0 31px, var(--biso-line) 31px 32px);
+  background-attachment: local;
+}
+.biso-nb-page { max-width: 820px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 44px); }
+.biso-nb-entry { line-height: 32px; padding: 0; color: var(--biso-ink); word-break: break-word; }
+.biso-nb-entry.user::before { content: "✎ "; color: var(--biso-ink-soft); }
+/* card de resposta — "canvas" flutuante: cabeçalho + corpo + rodapé (chips) */
+.biso-resp { margin: 12px 8px 16px; background: var(--biso-surface); border: 1px solid var(--biso-line);
+  border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 10px 30px rgba(0,0,0,.10);
+  overflow: hidden; word-break: break-word; }
+.biso-resp .resp-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 16px 7px; }
+.biso-resp .resp-who { font-weight: 700; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; color: var(--biso-primary); }
+.biso-resp .resp-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.biso-resp .resp-body { padding: 0 16px 14px; line-height: 1.55; }
+.biso-resp .resp-body p { margin: 0 0 .5em; } .biso-resp .resp-body p:last-child { margin-bottom: 0; }
+.biso-resp .resp-body ul, .biso-resp .resp-body ol { margin: .3em 0 .3em 1.3em; padding: 0; }
+.biso-resp .resp-body code { background: var(--biso-surface-2); border-radius: 4px; padding: 1px 5px; font-family: var(--biso-mono); font-size: .88em; }
+.biso-resp .resp-body pre { background: var(--biso-surface-2); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font-family: var(--biso-mono); font-size: .84em; }
+.biso-resp .resp-body pre code { background: none; padding: 0; }
+.biso-resp .resp-body a { color: var(--biso-primary); }
+.biso-resp .resp-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--biso-line); background: var(--biso-surface-2); }
+.biso-resp .resp-foot:empty { display: none; }
+.biso-nb-tool { display: inline-flex; align-items: center; gap: 5px; background: var(--biso-surface-2);
+  border: 1px solid var(--biso-line); border-radius: 999px; padding: 2px 9px; font-size: .72rem;
+  color: var(--biso-ink-soft); font-family: var(--biso-mono); }
+.biso-nb-tool.done { color: var(--biso-positive); }
+.biso-nb-input { line-height: 32px; min-height: 32px; outline: none; color: var(--biso-ink);
+  caret-color: var(--biso-primary); -webkit-user-modify: read-write; }
+.biso-nb-input:empty::before { content: attr(data-ph); color: var(--biso-ink-soft); pointer-events: none; }
+
+/* estado inicial (sem conversa): área de captura grande, "escreva em qualquer lugar",
+   sem pauta. O campo editável ocupa toda a área → o Scribble funciona em qualquer
+   ponto dela (e mesmo passando das bordas). Vira caderno após a 1ª troca. */
+.biso-nb.empty .biso-nb-scroll { background-image: none; display: flex; flex-direction: column; }
+.biso-nb.empty .biso-nb-page { flex: 1; display: flex; flex-direction: column; }
+.biso-nb.empty .biso-nb-input { flex: 1; min-height: 62vh; font-size: 1.2rem; line-height: 1.85; padding: 7vh 6px 0; }
+.biso-nb.empty .biso-nb-input:empty::before { font-size: 1.15rem; }
+.biso-nb-cursor { display: inline-block; width: 2px; height: 1em; background: var(--biso-primary);
+  margin-left: 1px; vertical-align: text-bottom; animation: biso-blink .75s step-end infinite; }
+.biso-nb-err { color: var(--biso-negative); margin: 6px 0 6px 16px; font-size: .9rem; }
+
+/* chips de follow-up (smart replies) */
+.biso-nb-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 12px 16px; }
+.biso-nb-chip { background: var(--biso-surface); border: 1px solid var(--biso-primary); color: var(--biso-ink);
+  border-radius: 999px; padding: 8px 15px; font-size: .9rem; min-height: 40px; line-height: 1.2; }
+.biso-nb-chip-write { border-style: dashed; background: var(--biso-surface-2); }
+
+/* cartão de escrita INLINE (resposta à mão) — em contexto, abaixo da resposta;
+   borda/fundo claros pra deixar óbvio onde é o quadro; botões presos no cartão */
+.biso-write-card { margin: 8px 0 14px 16px; border: 2px solid var(--biso-primary); border-radius: 14px;
+  background: var(--biso-surface); box-shadow: var(--shadow); overflow: hidden; }
+.biso-write-box { min-height: 28vh; padding: 16px; font-size: 1.2rem; line-height: 1.8; outline: none;
+  color: var(--biso-ink); -webkit-user-modify: read-write;
+  background-image: repeating-linear-gradient(transparent 0 33px, var(--biso-line) 33px 34px); }
+.biso-write-box:empty::before { content: attr(data-ph); color: var(--biso-ink-soft); pointer-events: none; }
+.biso-write-actions { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--biso-line);
+  background: var(--biso-surface-2); }
+.biso-write-actions .biso-btn { flex: 1; min-height: 48px; font-size: 1.02rem; }
+
+/* barra pendente (pausa → enviar) — barra própria acima do rodapé; alvos grandes,
+   sem sobrepor a linha de escrita (evita o toque cair no caderno atrás) */
+.biso-nb-pending { display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+  padding: 12px 16px; background: var(--biso-ink); color: var(--biso-bg);
+  border-top: 1px solid var(--biso-line); box-shadow: 0 -4px 16px rgba(0,0,0,.12); }
+.biso-nb-pending .lbl { flex: 1; min-width: 0; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .9; }
+.biso-nb-pending .ring { font-variant-numeric: tabular-nums; opacity: .85; font-size: 1.05rem; }
+.biso-nb-pending .go { background: var(--biso-primary); color: var(--biso-primary-ink); border: none;
+  border-radius: 12px; min-height: 48px; padding: 0 22px; font-weight: 700; font-size: 1rem; }
+.biso-nb-pending .cancel { background: transparent; color: var(--biso-bg); border: 1px solid rgba(255,255,255,.45);
+  border-radius: 12px; min-height: 48px; padding: 0 20px; font-size: 1rem; }
+
+/* rodapé fino do caderno */
+.biso-nb-foot { display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--biso-line); background: var(--biso-surface); }
+.biso-nb-status { font-size: .75rem; color: var(--biso-ink-soft); }
+
+/* ---- Menu radial (Pencil quick actions) ---- */
+.biso-radial-fab { position: fixed; right: 18px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
+  width: 56px; height: 56px; border-radius: 50%; background: var(--biso-primary); color: var(--biso-primary-ink);
+  border: none; font-size: 1.5rem; box-shadow: var(--shadow); z-index: 40; display: flex; align-items: center; justify-content: center;
+  touch-action: none; cursor: grab; }
+.biso-radial-overlay { position: fixed; inset: 0; z-index: 60; display: none; }
+.biso-radial-overlay.show { display: block; background: rgba(0,0,0,.28); }
+.biso-radial-slice { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 16px;
+  background: var(--biso-surface); border: 1px solid var(--biso-line); color: var(--biso-ink);
+  box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center; text-align: center;
+  font-size: .82rem; padding: 8px; line-height: 1.2; }
+.biso-radial-center { position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%;
+  background: var(--biso-ink); color: var(--biso-bg); border: none; font-size: .8rem; }
+
+/* menu de ações — cartão com grade de tiles (ícone + rótulo), ancorado no FAB */
+.biso-actions-card { position: fixed; width: min(86vw, 320px); padding: 10px;
+  background: var(--biso-surface); border: 1px solid var(--biso-line); border-radius: 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 16px 44px rgba(0,0,0,.20);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  animation: biso-pop .14s ease-out; transform-origin: top center; }
+@keyframes biso-pop { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+.biso-action-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: var(--biso-surface-2); border: 1px solid var(--biso-line); border-radius: 14px;
+  padding: 12px 6px; min-height: 78px; color: var(--biso-ink); }
+.biso-action-tile .ic { font-size: 1.5rem; line-height: 1; }
+.biso-action-tile .lb { font-size: .72rem; text-align: center; line-height: 1.15; color: var(--biso-ink-soft); }
+.biso-action-tile.edit { border-style: dashed; }

@@ -9,7 +9,7 @@
   // ── estilos (injeta uma vez) ──────────────────────────────────────────
   const css = `
     #bisa-annot-fab { position:fixed; right:18px; bottom:calc(80px + env(safe-area-inset-bottom));
-      z-index:900; width:52px; height:52px; border-radius:50%; border:none; cursor:pointer;
+      z-index:900; width:52px; height:52px; border-radius:50%; border:none; cursor:grab; touch-action:none;
       background:var(--surface); color:var(--ink); box-shadow:var(--shadow); font-size:1.4rem;
       display:flex; align-items:center; justify-content:center; }
     #bisa-annot-fab.on { background:var(--primary); color:var(--primary-ink); }
@@ -360,8 +360,9 @@
   const fab = elt('button', null, '✎');
   fab.id = 'bisa-annot-fab';
   fab.setAttribute('aria-label', 'Anotar mudança');
-  fab.onclick = () => setMode(!modeOn);
   document.body.appendChild(fab);
+  // arrastável + snap-to-edge; toque simples abre/fecha o modo
+  BISA.makeDraggableFab(fab, 'bisa_annot_fab_pos', 52, () => setMode(!modeOn));
 
   // Listener global em fase de captura (o #screen troca de conteúdo a cada tela).
   document.addEventListener('click', (ev) => {

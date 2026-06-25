@@ -110,13 +110,36 @@
     if (a) { e.preventDefault(); openEntity(a.dataset.slug); }
   });
 
-  // ---- gate ----
+  // ---- gate (o "selo": monólito + runa; ver gate.js) ----
+  let gateMounted = false;
+  function bootApp() {
+    connectWs();
+    registerSw();
+    const initial = (location.hash || '').replace('#', '') || 'hub';
+    go(screens[initial] ? initial : 'hub');
+  }
+  // Chamado pelo ritual da runa: seta o cookie no server (POST /unlock, sem
+  // auth — local, baixa segurança por design), guarda o token p/ header+WS, e
+  // sobe o app por trás do monólito (que então se abre revelando-o).
+  async function unlock() {
+    const r = await fetch('/unlock', { method: 'POST' });
+    if (!r.ok) throw new Error('unlock falhou');
+    const j = await r.json();
+    token = j.token; localStorage.setItem(TOKEN_KEY, token);
+    bootApp();
+  }
   function showGate() {
-    document.getElementById('gate').classList.add('show');
+    const g = document.getElementById('gate');
+    g.classList.add('show');
+    if (gateMounted) return;
+    gateMounted = true;
+    if (window.BISA_GATE) window.BISA_GATE.mount(g, unlock);
+    else { g.classList.add('fallback'); setupGate(); }   // sem gate.js → input
   }
   function hideGate() { document.getElementById('gate').classList.remove('show'); }
   function setupGate() {
-    document.getElementById('gate-go').onclick = () => {
+    const btn = document.getElementById('gate-go'); if (!btn) return;
+    btn.onclick = () => {
       const t = document.getElementById('gate-token').value.trim();
       if (!t) return;
       token = t; localStorage.setItem(TOKEN_KEY, t);
@@ -133,22 +156,76 @@
 
   // ---- boot ----
   async function start() {
-    setupGate();
     document.querySelectorAll('#nav button').forEach((b) =>
       b.onclick = () => go(b.dataset.route));
     if (!token) { showGate(); return; }
     try { await api('/auth-check'); }
     catch { showGate(); return; }
     hideGate();
-    connectWs();
-    registerSw();
-    const initial = (location.hash || '').replace('#', '') || 'hub';
-    go(screens[initial] ? initial : 'hub');
+    bootApp();
+  }
+
+  // ---- FAB arrastável com snap-to-edge (reuso: Modo Anotar ✎ e Biso ⌗) ----
+  // Toque simples = onTapFn(); arrastar = move, gruda na borda mais próxima ao
+  // soltar e guarda a posição (localStorage[key]). Distingue toque de arraste
+  // por um limiar de 6px e engole o clique fantasma após o arraste.
+  function makeDraggableFab(el, key, size, onTapFn) {
+    const M = 6;
+    const clamp = (x, y) => [
+      Math.max(M, Math.min(window.innerWidth - size - M, x)),
+      Math.max(M, Math.min(window.innerHeight - size - M, y)),
+    ];
+    function place(x, y, anim) {
+      [x, y] = clamp(x, y);
+      el.style.transition = anim ? 'left .2s ease, top .2s ease' : '';
+      el.style.left = x + 'px'; el.style.top = y + 'px';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+      return [x, y];
+    }
+    // x: borda esq/dir mais próxima · y: topo / MEIO / base mais próximo → 6 pontos
+    const snapCorner = (x, y) => {
+      const nx = (x + size / 2 < window.innerWidth / 2) ? M : (window.innerWidth - size - M);
+      const ys = [M, (window.innerHeight - size) / 2, window.innerHeight - size - M];
+      let ny = ys[0], best = Infinity;
+      for (const c of ys) { const d = Math.abs(y - c); if (d < best) { best = d; ny = c; } }
+      return [nx, ny];
+    };
+    try { const p = JSON.parse(localStorage.getItem(key)); if (p && typeof p.x === 'number') place(p.x, p.y, false); } catch {}
+    let dragging = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0, pid = null;
+    el.addEventListener('pointerdown', (e) => {
+      dragging = true; moved = false; pid = e.pointerId; sx = e.clientX; sy = e.clientY;
+      const r = el.getBoundingClientRect(); ox = r.left; oy = r.top;
+      el.style.transition = '';
+      try { el.setPointerCapture(pid); } catch {}
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 6) moved = true;
+      if (moved) { e.preventDefault(); place(ox + dx, oy + dy, false); }
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false;
+      try { el.releasePointerCapture(pid); } catch {}
+      if (moved) {
+        const r = el.getBoundingClientRect();
+        const [cx, cy] = snapCorner(r.left, r.top);
+        const [nx, ny] = place(cx, cy, true);     // snap: vai p/ o canto mais próximo (4 cantos)
+        try { localStorage.setItem(key, JSON.stringify({ x: nx, y: ny })); } catch {}
+        const sw = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        document.addEventListener('click', sw, { capture: true, once: true });
+        setTimeout(() => document.removeEventListener('click', sw, { capture: true }), 400);
+      } else if (onTapFn) { onTapFn(); }
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    window.addEventListener('resize', () => { if (el.isConnected && el.style.left) place(parseFloat(el.style.left), parseFloat(el.style.top), false); });
   }
 
   window.BISA = {
     api, apiRaw, toast, renderMarkdown, onWs, wsSend, go, openEntity,
-    screens, start,
+    screens, start, makeDraggableFab,
     get token() { return token; },
   };
 })();
