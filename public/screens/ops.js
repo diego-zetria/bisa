@@ -22,6 +22,11 @@
       .ops-ev .t { font-weight:600; font-size:.92rem; }
       .ops-ev .b { font-size:.85rem; }
       .ops-ev .when { font-size:.78rem; white-space:nowrap; }
+      .ops-thread { margin-top:6px; padding:8px 10px; background:var(--surface-2);
+        border-radius:8px; border-left:2px solid var(--line); }
+      .ops-msg { font-size:.85rem; margin-bottom:4px; line-height:1.35; }
+      .ops-msg:last-child { margin-bottom:0; }
+      .ops-msg-author { font-weight:600; }
       .ops-out { font-family:ui-monospace,monospace; font-size:.78rem; white-space:pre-wrap;
         background:var(--surface-2); border-radius:8px; padding:8px 10px; margin-top:8px;
         max-height:180px; overflow:auto; }
@@ -240,6 +245,18 @@
           const body = elx('div', 'body');
           body.append(elx('div', 't', ev.title));
           if (ev.body) body.append(elx('div', 'b muted', ev.body));
+
+          // Message preview: the actual last messages of the conversation.
+          if (ev.data && Array.isArray(ev.data.messages) && ev.data.messages.length) {
+            const thread = elx('div', 'ops-thread');
+            for (const m of ev.data.messages) {
+              const line = elx('div', 'ops-msg');
+              if (m.author) line.append(elx('span', 'ops-msg-author', m.author + ': '));
+              line.append(document.createTextNode(m.text));
+              thread.appendChild(line);
+            }
+            body.appendChild(thread);
+          }
 
           // Two-way Slack: mentions/DMs get an inline reply box. The reply is
           // queued in biso and typed into Slack by corp-watch (~15s).
