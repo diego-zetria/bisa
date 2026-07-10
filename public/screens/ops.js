@@ -27,6 +27,11 @@
       .ops-msg { font-size:.85rem; margin-bottom:4px; line-height:1.35; }
       .ops-msg:last-child { margin-bottom:0; }
       .ops-msg-author { font-weight:600; }
+      .ops-triage { margin-top:8px; padding:10px 12px; background:var(--surface-2);
+        border-radius:8px; border-left:2px solid var(--primary); font-size:.86rem; }
+      .ops-triage h3 { font-size:.9rem; margin:8px 0 3px; }
+      .ops-triage p { margin:3px 0; }
+      .ops-triage code { font-size:.8rem; }
       .ops-out { font-family:ui-monospace,monospace; font-size:.78rem; white-space:pre-wrap;
         background:var(--surface-2); border-radius:8px; padding:8px 10px; margin-top:8px;
         max-height:180px; overflow:auto; }
@@ -256,6 +261,45 @@
               thread.appendChild(line);
             }
             body.appendChild(thread);
+          }
+
+          // Context-aware triage: headless claude researches the message against
+          // the mcgraw repo + journal + memory and writes a note (F1).
+          if ((ev.type === 'slack.mention' || ev.type === 'slack.dm') && ev.data && ev.data.key) {
+            const triageBtn = elx('button', 'btn ghost', '🧠 Analyze with context');
+            triageBtn.style.cssText = 'min-height:32px;font-size:.8rem;margin-top:6px;margin-right:6px;';
+            const triageOut = elx('div', 'ops-triage');
+            triageOut.style.display = 'none';
+            const showTriage = (t) => {
+              triageOut.style.display = '';
+              if (t.status === 'analyzing') { triageOut.innerHTML = '<em>🧠 analyzing… (reading the repo, ~30-90s)</em>'; }
+              else if (t.status === 'done') { triageOut.innerHTML = BISA.renderMarkdown(t.note || ''); }
+              else { triageOut.textContent = `⚠ ${t.note || 'triage failed'}`; }
+            };
+            let triagePoll = null;
+            const pollTriage = () => {
+              clearTimeout(triagePoll);
+              triagePoll = setTimeout(async () => {
+                try {
+                  const t = await bget(`/api/events/${ev.id}/triage`);
+                  showTriage(t);
+                  if (t.status === 'analyzing') pollTriage();
+                } catch { pollTriage(); }
+              }, 3000);
+            };
+            triageBtn.onclick = async () => {
+              triageBtn.disabled = true;
+              showTriage({ status: 'analyzing' });
+              try {
+                await bpost(`/api/events/${ev.id}/analyze`);
+                pollTriage();
+              } catch (e) { showTriage({ status: 'error', note: e.message }); }
+              triageBtn.disabled = false;
+            };
+            // If a triage already exists (revisiting the feed), show it.
+            bget(`/api/events/${ev.id}/triage`).then(showTriage).catch(() => {});
+            body.append(triageBtn);
+            body.append(triageOut);
           }
 
           // Two-way Slack: mentions/DMs get an inline reply box. The reply is

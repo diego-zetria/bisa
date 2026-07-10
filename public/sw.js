@@ -1,5 +1,5 @@
 // sw.js — service worker mínimo: app-shell cache + passthrough + push.
-const CACHE = 'bisa-v15';
+const CACHE = 'bisa-v16';
 const SHELL = ['/', '/style.css', '/app.js',
   '/screens/hub.js', '/screens/journal.js', '/screens/world.js', '/screens/chat.js',
   '/vendor/marked.min.js', '/vendor/purify.min.js', '/vendor/Sortable.min.js', '/vendor/force-graph.min.js'];
