@@ -44,6 +44,11 @@
         border:1px solid var(--line); background:var(--surface-2); color:var(--ink-soft);
         border-radius:999px; padding:4px 10px; max-width:100%; overflow:hidden;
         text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+      .ops-badge { font-size:.7rem; font-weight:600; color:#fff; background:var(--danger,#c0392b);
+        border-radius:4px; padding:1px 5px; margin-left:6px; vertical-align:middle; }
+      .ops-params { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+      .ops-params input, .ops-params select { font-size:.85rem; padding:6px 8px;
+        border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); }
     `;
     document.head.appendChild(s);
   }
@@ -56,7 +61,7 @@
   };
 
   const bget = (p) => BISA.api('/biso' + p);
-  const bpost = (p) => BISA.api('/biso' + p, { method: 'POST' });
+  const bpost = (p, json) => BISA.api('/biso' + p, json ? { method: 'POST', json } : { method: 'POST' });
 
   const ICON = {
     'slack.mention': '📢', 'slack.dm': '💬', 'slack.activity': '💤',
@@ -69,6 +74,7 @@
 
   let unsubWs = null;
   let pollTimer = null;
+  let corpTimer = null;
 
   window.BISA.screens['ops'] = {
     mount(el) {
@@ -180,6 +186,128 @@
       cmdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runCmd(); });
       renderRecent();
 
+      // ---- corp break-glass card ----
+      el.appendChild(elx('div', 'section-title', 'Corp break-glass'));
+      const corpCard = elx('div', 'card');
+      el.appendChild(corpCard);
+
+      async function renderCorp() {
+        let lock;
+        try { lock = await bget('/api/corp/lock'); }
+        catch { corpCard.innerHTML = ''; corpCard.appendChild(elx('p', 'muted', '⚠ Could not read corp lock.')); return; }
+        corpCard.innerHTML = '';
+
+        const statusRow = elx('div', 'ops-action');
+        const info = elx('div', 'info');
+        if (lock.masterDisabled) {
+          info.append(elx('div', 'name', '⛔ Hard-disabled'), elx('div', 'desc muted', 'BISO_CORP_EXEC_DISABLED is set — arbitrary corp exec/fetch is off.'));
+          statusRow.append(info);
+          corpCard.appendChild(statusRow);
+          return;
+        }
+        if (lock.unlocked) {
+          const mins = Math.max(0, Math.round((new Date(lock.until) - Date.now()) / 60000));
+          info.append(elx('div', 'name', `🔓 Unlocked (~${mins} min left)`), elx('div', 'desc muted', lock.reason || 'Arbitrary corp exec + file fetch are active.'));
+        } else {
+          info.append(elx('div', 'name', '🔒 Locked'), elx('div', 'desc muted', 'Only read-only corp actions run. Unlock for arbitrary exec/fetch.'));
+        }
+        const toggle = elx('button', lock.unlocked ? 'btn ghost' : 'btn', lock.unlocked ? 'Relock' : 'Unlock 15 min');
+        toggle.style.minHeight = '40px';
+        toggle.onclick = async () => {
+          toggle.disabled = true;
+          try {
+            if (lock.unlocked) await bpost('/api/corp/lock', { enabled: false });
+            else await bpost('/api/corp/lock', { minutes: 15, reason: 'iPad break-glass' });
+          } catch (e) { BISA.toast(`⚠ ${e.message}`); }
+          renderCorp();
+        };
+        statusRow.append(info, toggle);
+        corpCard.appendChild(statusRow);
+
+        if (lock.unlocked) {
+          // arbitrary exec
+          const exRow = elx('div', 'ops-cmdrow');
+          exRow.style.marginTop = '10px';
+          const exIn = elx('input');
+          exIn.placeholder = 'corp command, e.g. kubectl get nodes';
+          exIn.autocapitalize = 'off'; exIn.spellcheck = false;
+          const exBtn = elx('button', 'btn', '▶');
+          exBtn.style.minHeight = '40px';
+          const exOut = elx('div', 'ops-out'); exOut.style.display = 'none';
+          const runEx = async () => {
+            const cmd = exIn.value.trim(); if (!cmd) return;
+            exBtn.disabled = true; exOut.style.display = ''; exOut.textContent = '⏳ running on corp…';
+            try {
+              const { runId } = await bpost('/api/corp/exec', { cmd });
+              for (let i = 0; i < 40; i++) {
+                await new Promise((r) => setTimeout(r, 2000));
+                const runs = await bget('/api/corp/runs?limit=10');
+                const r = (runs.runs || []).find((x) => x.id === runId);
+                if (r && r.status !== 'running') { exOut.textContent = `[${r.status}${r.exitCode != null ? ` · exit ${r.exitCode}` : ''}]\n${r.output || '(no output)'}`.trim(); break; }
+              }
+            } catch (e) { exOut.textContent = `⚠ ${e.message}`; }
+            exBtn.disabled = false;
+          };
+          exBtn.onclick = runEx;
+          exIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') runEx(); });
+          exRow.append(exIn, exBtn);
+
+          // file fetch
+          const fRow = elx('div', 'ops-cmdrow');
+          fRow.style.marginTop = '8px';
+          const fIn = elx('input');
+          fIn.placeholder = 'fetch file, e.g. /var/log/system.log';
+          fIn.autocapitalize = 'off'; fIn.spellcheck = false;
+          const fBtn = elx('button', 'btn ghost', '⬇');
+          fBtn.style.minHeight = '40px';
+          const fOut = elx('div', 'ops-out'); fOut.style.display = 'none';
+          const runFetch = async () => {
+            const p = fIn.value.trim(); if (!p) return;
+            fBtn.disabled = true; fOut.style.display = ''; fOut.textContent = '⏳ fetching…';
+            try {
+              const { runId } = await bpost('/api/corp/fetch', { path: p });
+              for (let i = 0; i < 40; i++) {
+                await new Promise((r) => setTimeout(r, 2000));
+                const runs = await bget('/api/corp/runs?limit=10');
+                const r = (runs.runs || []).find((x) => x.id === runId);
+                if (r && r.status !== 'running') {
+                  if (r.status === 'done' && r.hasFile) {
+                    fOut.innerHTML = '';
+                    const dl = elx('button', 'btn', '⬇ Download file');
+                    dl.style.minHeight = '40px';
+                    dl.onclick = async () => {
+                      // The /biso proxy authenticates by header, so fetch → blob
+                      // → object URL instead of a plain link.
+                      try {
+                        const resp = await fetch(`/biso/api/corp/runs/${runId}/download`, { headers: { 'x-bisa-token': BISA.token } });
+                        if (!resp.ok) throw new Error('download failed');
+                        const url = URL.createObjectURL(await resp.blob());
+                        const a2 = document.createElement('a');
+                        a2.href = url; a2.download = p.split('/').pop() || 'file';
+                        document.body.appendChild(a2); a2.click(); a2.remove();
+                        setTimeout(() => URL.revokeObjectURL(url), 10000);
+                      } catch (e) { BISA.toast(`⚠ ${e.message}`); }
+                    };
+                    fOut.appendChild(dl);
+                  } else { fOut.textContent = `⚠ ${r.output || r.status}`; }
+                  break;
+                }
+              }
+            } catch (e) { fOut.textContent = `⚠ ${e.message}`; }
+            fBtn.disabled = false;
+          };
+          fBtn.onclick = runFetch;
+          fIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') runFetch(); });
+          fRow.append(fIn, fBtn);
+
+          corpCard.append(exRow, exOut, fRow, fOut);
+        }
+
+        // Re-render to update the countdown / auto-relock.
+        clearTimeout(corpTimer);
+        if (lock.unlocked) corpTimer = setTimeout(renderCorp, 30000);
+      }
+
       // ---- actions card ----
       el.appendChild(elx('div', 'section-title', 'Actions'));
       const actionsCard = elx('div', 'card');
@@ -209,15 +337,39 @@
         for (const a of cat.actions) {
           const row = elx('div', 'ops-action');
           const info = elx('div', 'info');
-          info.append(elx('div', 'name', a.name), elx('div', 'desc muted', `${TARGET[a.target] || a.target}${a.description ? ' — ' + a.description : ''}`));
+          const nameLine = elx('div', 'name', a.name);
+          if (a.risk === 'write') nameLine.append(elx('span', 'ops-badge', ' write'));
+          info.append(nameLine, elx('div', 'desc muted', `${TARGET[a.target] || a.target}${a.description ? ' — ' + a.description : ''}`));
+
+          // Parameter inputs (enum → select, else free text validated server-side).
+          const paramEls = {};
+          if (a.params && a.params.length) {
+            const prow = elx('div', 'ops-params');
+            for (const p of a.params) {
+              let inp;
+              if (p.enum && p.enum.length) {
+                inp = elx('select');
+                for (const opt of p.enum) { const o = elx('option', null, opt); o.value = opt; inp.appendChild(o); }
+              } else {
+                inp = elx('input');
+                inp.placeholder = p.label || p.name;
+              }
+              paramEls[p.name] = inp;
+              prow.appendChild(inp);
+            }
+            info.appendChild(prow);
+          }
+
           const btn = elx('button', 'btn', '▶ Run');
           btn.style.minHeight = '40px';
           const last = lastByAction[a.id];
           if (last && last.status === 'running') btn.disabled = true;
           btn.onclick = async () => {
             btn.disabled = true;
+            const params = {};
+            for (const k in paramEls) params[k] = paramEls[k].value;
             try {
-              await bpost(`/api/actions/${a.id}/run`);
+              await bpost(`/api/actions/${a.id}/run`, Object.keys(params).length ? { params } : undefined);
               BISA.toast(`Running "${a.name}"…`);
               schedulePoll();
             } catch (e) {
@@ -363,12 +515,14 @@
       });
 
       renderApprovals();
+      renderCorp();
       renderActions();
       renderFeed();
     },
     unmount() {
       if (unsubWs) { unsubWs(); unsubWs = null; }
       clearTimeout(pollTimer);
+      clearTimeout(corpTimer);
       pollTimer = null;
     },
   };
