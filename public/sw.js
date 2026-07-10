@@ -1,5 +1,5 @@
 // sw.js — service worker mínimo: app-shell cache + passthrough + push.
-const CACHE = 'bisa-v10';
+const CACHE = 'bisa-v14';
 const SHELL = ['/', '/style.css', '/app.js',
   '/screens/hub.js', '/screens/journal.js', '/screens/world.js', '/screens/chat.js',
   '/vendor/marked.min.js', '/vendor/purify.min.js', '/vendor/Sortable.min.js', '/vendor/force-graph.min.js'];
@@ -13,8 +13,14 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // network-first para API/WS; cache-first para o shell estático
   if (e.request.method !== 'GET' || url.pathname.startsWith('/api') ||
-      url.pathname.match(/^\/(codex|planner|pkm|finance|llm|push|pair|feedback|sentinel|file|fs|auth-check|healthz)/)) {
+      url.pathname.match(/^\/(codex|planner|pkm|finance|llm|push|pair|feedback|sentinel|file|fs|auth-check|healthz|biso)/)) {
     return; // deixa passar direto à rede
+  }
+  // navegação (index.html) é network-first: um <script> novo no HTML chegava
+  // atrasado com cache-first (mic sumiu no iPad, 2026-07-09); cache só offline
+  if (e.request.mode === 'navigate') {
+    e.respondWith(fetch(e.request).catch(() => caches.match('/')));
+    return;
   }
   e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));
 });

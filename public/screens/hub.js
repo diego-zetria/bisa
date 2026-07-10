@@ -634,6 +634,20 @@
     camBtn.addEventListener('click', () => BISA.go('sentinel'));
     right.appendChild(camBtn);
 
+    /* Botão Slack corp (slack-watch do biso via proxy /biso) */
+    const slkBtn = el('button', 'btn ghost block');
+    slkBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    slkBtn.textContent = '📡 Slack corp';
+    slkBtn.addEventListener('click', () => BISA.go('slack'));
+    right.appendChild(slkBtn);
+
+    /* Botão Remote Ops (eventos do corp-watch + ações remotas via /biso) */
+    const opsBtn = el('button', 'btn ghost block');
+    opsBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    opsBtn.textContent = '🛰 Remote Ops';
+    opsBtn.addEventListener('click', () => BISA.go('ops'));
+    right.appendChild(opsBtn);
+
     /* Botão Ajustes (tela de entrada / selo) */
     const cfgBtn = el('button', 'btn ghost block');
     cfgBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
