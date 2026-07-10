@@ -93,6 +93,28 @@ test('cursorFound:false re-anchors without re-delivering the tail', async () => 
   feed.cursorFound = true;
 });
 
+test('empty-store first sync anchors at "start" so the FIRST real event is delivered', async () => {
+  const META2 = fs.mkdtempSync(path.join(os.tmpdir(), 'events-bridge-meta2-'));
+  const pushed2 = [];
+  const bridge2 = makeEventsBridge({
+    BISO_URL, BISO_TOKEN: 't',
+    push: { notify: async (title) => { pushed2.push(title); } },
+    broadcast: () => {}, META: META2,
+    pollMs: 60 * 60 * 1000,
+  });
+  const cycle2 = async () => { bridge2.stop(); bridge2.start(); await new Promise((r) => setTimeout(r, 80)); };
+
+  feed = { events: [], latest: null };            // fresh install: nothing yet
+  await cycle2();
+  const cur = JSON.parse(fs.readFileSync(path.join(META2, 'biso-events-cursor.json'), 'utf8'));
+  assert.equal(cur.after, 'start');
+
+  feed = { events: [ev('ev-first')], latest: 'ev-first' };   // the very first event
+  await cycle2();
+  assert.deepEqual(pushed2, ['mention ev-first']);           // delivered, not swallowed
+  bridge2.stop();
+});
+
 test('survives 500s and a 404 (old biso) without advancing the cursor', async () => {
   forcedStatus = 500;
   await cycle();
