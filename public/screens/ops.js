@@ -49,6 +49,7 @@
       .ops-params { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
       .ops-params input, .ops-params select { font-size:.85rem; padding:6px 8px;
         border:1px solid var(--line); border-radius:6px; background:var(--surface-2); color:var(--ink); }
+      .ops-action .mono { font-family:ui-monospace,monospace; font-size:.78rem; }
     `;
     document.head.appendChild(s);
   }
@@ -191,25 +192,117 @@
       const corpCard = elx('div', 'card');
       el.appendChild(corpCard);
 
+      // Download a corp run's artifact (proxy authenticates by header → blob).
+      async function downloadRun(runId, filename) {
+        try {
+          const resp = await fetch(`/biso/api/corp/runs/${runId}/download`, { headers: { 'x-bisa-token': BISA.token } });
+          if (!resp.ok) throw new Error('download failed');
+          const url = URL.createObjectURL(await resp.blob());
+          const a2 = document.createElement('a');
+          a2.href = url; a2.download = filename || 'file';
+          document.body.appendChild(a2); a2.click(); a2.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        } catch (e) { BISA.toast(`⚠ ${e.message}`); }
+      }
+      // Poll a corp run, streaming live output into `out`, until it settles.
+      // Returns the final run. onPin (optional) adds a 📌 pin button for exec.
+      async function pollCorpRun(runId, out, opts) {
+        opts = opts || {};
+        out.style.display = ''; out.textContent = '⏳ running on corp…';
+        for (let i = 0; i < 100; i++) {
+          await new Promise((r) => setTimeout(r, 1500));
+          let runs;
+          try { runs = await bget('/api/corp/runs?limit=15'); } catch { continue; }
+          const r = (runs.runs || []).find((x) => x.id === runId);
+          if (!r) continue;
+          const head = r.status === 'running' ? '⏳ running…'
+            : `[${r.status}${r.exitCode != null ? ` · exit ${r.exitCode}` : ''}]`;
+          out.textContent = `${head}\n${r.output || ''}`.trim();
+          if (r.status !== 'running') {
+            const extras = elx('div'); extras.style.marginTop = '6px';
+            if (r.hasFile) {
+              const dl = elx('button', 'btn ghost', '⬇ Full output');
+              dl.style.minHeight = '36px'; dl.style.marginRight = '6px';
+              dl.onclick = () => downloadRun(runId, opts.filename || 'output.txt');
+              extras.appendChild(dl);
+            }
+            if (opts.onPin) {
+              const pin = elx('button', 'btn ghost', '📌 Pin');
+              pin.style.minHeight = '36px';
+              pin.onclick = () => opts.onPin();
+              extras.appendChild(pin);
+            }
+            if (extras.children.length) out.appendChild(extras);
+            return r;
+          }
+        }
+      }
+
       async function renderCorp() {
-        let lock;
-        try { lock = await bget('/api/corp/lock'); }
-        catch { corpCard.innerHTML = ''; corpCard.appendChild(elx('p', 'muted', '⚠ Could not read corp lock.')); return; }
+        let lock, runbooks, pins;
+        try {
+          [lock, runbooks, pins] = await Promise.all([
+            bget('/api/corp/lock'), bget('/api/corp/runbooks').catch(() => ({ runbooks: [] })),
+            bget('/api/corp/pins').catch(() => ({ pins: [] })),
+          ]);
+        } catch { corpCard.innerHTML = ''; corpCard.appendChild(elx('p', 'muted', '⚠ Could not read corp lock.')); return; }
         corpCard.innerHTML = '';
 
+        // ---- runbooks (read-only, always available) ----
+        for (const rb of (runbooks.runbooks || [])) {
+          const row = elx('div', 'ops-action');
+          const info = elx('div', 'info');
+          info.append(elx('div', 'name', `📋 ${rb.name}`), elx('div', 'desc muted', (rb.steps || []).join(' · ')));
+          const btn = elx('button', 'btn', '▶ Run');
+          btn.style.minHeight = '40px';
+          const out = elx('div', 'ops-out'); out.style.display = 'none';
+          btn.onclick = async () => {
+            btn.disabled = true;
+            try { const { runId } = await bpost(`/api/corp/runbooks/${rb.id}/run`); await pollCorpRun(runId, out); }
+            catch (e) { out.style.display = ''; out.textContent = `⚠ ${e.message}`; }
+            btn.disabled = false;
+          };
+          row.append(info, btn);
+          corpCard.append(row, out);
+        }
+
+        // ---- pinned commands (read-tier, always available) ----
+        for (const pin of (pins.pins || [])) {
+          const row = elx('div', 'ops-action');
+          const info = elx('div', 'info');
+          info.append(elx('div', 'name', `📌 ${pin.name}`), elx('div', 'desc muted mono', pin.cmd));
+          const runBtn = elx('button', 'btn', '▶');
+          runBtn.style.minHeight = '40px';
+          const del = elx('button', 'btn ghost', '🗑');
+          del.style.minHeight = '40px';
+          const out = elx('div', 'ops-out'); out.style.display = 'none';
+          runBtn.onclick = async () => {
+            runBtn.disabled = true;
+            try { const { runId } = await bpost(`/api/corp/pins/${pin.id}/run`); await pollCorpRun(runId, out); }
+            catch (e) { out.style.display = ''; out.textContent = `⚠ ${e.message}`; }
+            runBtn.disabled = false;
+          };
+          del.onclick = async () => {
+            try { await BISA.api(`/biso/api/corp/pins/${pin.id}`, { method: 'DELETE' }); renderCorp(); }
+            catch (e) { BISA.toast(`⚠ ${e.message}`); }
+          };
+          row.append(info, runBtn, del);
+          corpCard.append(row, out);
+        }
+
+        // ---- break-glass status + toggle ----
         const statusRow = elx('div', 'ops-action');
         const info = elx('div', 'info');
         if (lock.masterDisabled) {
-          info.append(elx('div', 'name', '⛔ Hard-disabled'), elx('div', 'desc muted', 'BISO_CORP_EXEC_DISABLED is set — arbitrary corp exec/fetch is off.'));
-          statusRow.append(info);
-          corpCard.appendChild(statusRow);
-          return;
+          info.append(elx('div', 'name', '⛔ Hard-disabled'), elx('div', 'desc muted', 'BISO_CORP_EXEC_DISABLED is set — arbitrary corp exec/fetch/push is off.'));
+          statusRow.append(info); corpCard.appendChild(statusRow);
+          clearTimeout(corpTimer); return;
         }
         if (lock.unlocked) {
           const mins = Math.max(0, Math.round((new Date(lock.until) - Date.now()) / 60000));
-          info.append(elx('div', 'name', `🔓 Unlocked (~${mins} min left)`), elx('div', 'desc muted', lock.reason || 'Arbitrary corp exec + file fetch are active.'));
+          info.append(elx('div', 'name', `🔓 Unlocked (~${mins} min left)`), elx('div', 'desc muted', lock.reason || 'Arbitrary corp exec + file transfer are active.'));
         } else {
-          info.append(elx('div', 'name', '🔒 Locked'), elx('div', 'desc muted', 'Only read-only corp actions run. Unlock for arbitrary exec/fetch.'));
+          info.append(elx('div', 'name', '🔒 Break-glass locked'), elx('div', 'desc muted', 'Runbooks/pinned run read-only. Unlock for arbitrary exec/fetch/push.'));
         }
         const toggle = elx('button', lock.unlocked ? 'btn ghost' : 'btn', lock.unlocked ? 'Relock' : 'Unlock 15 min');
         toggle.style.minHeight = '40px';
@@ -225,82 +318,75 @@
         corpCard.appendChild(statusRow);
 
         if (lock.unlocked) {
-          // arbitrary exec
-          const exRow = elx('div', 'ops-cmdrow');
-          exRow.style.marginTop = '10px';
+          // arbitrary exec (live output + full-output download + pin)
+          const exRow = elx('div', 'ops-cmdrow'); exRow.style.marginTop = '10px';
           const exIn = elx('input');
-          exIn.placeholder = 'corp command, e.g. kubectl get nodes';
+          exIn.placeholder = 'corp command, e.g. kubectl logs -f deploy/x';
           exIn.autocapitalize = 'off'; exIn.spellcheck = false;
-          const exBtn = elx('button', 'btn', '▶');
-          exBtn.style.minHeight = '40px';
+          const exBtn = elx('button', 'btn', '▶'); exBtn.style.minHeight = '40px';
           const exOut = elx('div', 'ops-out'); exOut.style.display = 'none';
           const runEx = async () => {
             const cmd = exIn.value.trim(); if (!cmd) return;
-            exBtn.disabled = true; exOut.style.display = ''; exOut.textContent = '⏳ running on corp…';
+            exBtn.disabled = true;
             try {
               const { runId } = await bpost('/api/corp/exec', { cmd });
-              for (let i = 0; i < 40; i++) {
-                await new Promise((r) => setTimeout(r, 2000));
-                const runs = await bget('/api/corp/runs?limit=10');
-                const r = (runs.runs || []).find((x) => x.id === runId);
-                if (r && r.status !== 'running') { exOut.textContent = `[${r.status}${r.exitCode != null ? ` · exit ${r.exitCode}` : ''}]\n${r.output || '(no output)'}`.trim(); break; }
-              }
-            } catch (e) { exOut.textContent = `⚠ ${e.message}`; }
+              await pollCorpRun(runId, exOut, {
+                filename: 'corp-output.txt',
+                onPin: async () => {
+                  const name = prompt('Pin name:', cmd.slice(0, 40));
+                  if (name == null) return;
+                  try { await bpost('/api/corp/pins', { name, cmd }); BISA.toast('Pinned ✓'); renderCorp(); }
+                  catch (e) { BISA.toast(`⚠ ${e.message}`); }
+                },
+              });
+            } catch (e) { exOut.style.display = ''; exOut.textContent = `⚠ ${e.message}`; }
             exBtn.disabled = false;
           };
           exBtn.onclick = runEx;
           exIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') runEx(); });
           exRow.append(exIn, exBtn);
 
-          // file fetch
-          const fRow = elx('div', 'ops-cmdrow');
-          fRow.style.marginTop = '8px';
+          // file fetch (corp → iPad)
+          const fRow = elx('div', 'ops-cmdrow'); fRow.style.marginTop = '8px';
           const fIn = elx('input');
           fIn.placeholder = 'fetch file, e.g. /var/log/system.log';
           fIn.autocapitalize = 'off'; fIn.spellcheck = false;
-          const fBtn = elx('button', 'btn ghost', '⬇');
-          fBtn.style.minHeight = '40px';
+          const fBtn = elx('button', 'btn ghost', '⬇'); fBtn.style.minHeight = '40px';
           const fOut = elx('div', 'ops-out'); fOut.style.display = 'none';
           const runFetch = async () => {
             const p = fIn.value.trim(); if (!p) return;
-            fBtn.disabled = true; fOut.style.display = ''; fOut.textContent = '⏳ fetching…';
+            fBtn.disabled = true;
             try {
               const { runId } = await bpost('/api/corp/fetch', { path: p });
-              for (let i = 0; i < 40; i++) {
-                await new Promise((r) => setTimeout(r, 2000));
-                const runs = await bget('/api/corp/runs?limit=10');
-                const r = (runs.runs || []).find((x) => x.id === runId);
-                if (r && r.status !== 'running') {
-                  if (r.status === 'done' && r.hasFile) {
-                    fOut.innerHTML = '';
-                    const dl = elx('button', 'btn', '⬇ Download file');
-                    dl.style.minHeight = '40px';
-                    dl.onclick = async () => {
-                      // The /biso proxy authenticates by header, so fetch → blob
-                      // → object URL instead of a plain link.
-                      try {
-                        const resp = await fetch(`/biso/api/corp/runs/${runId}/download`, { headers: { 'x-bisa-token': BISA.token } });
-                        if (!resp.ok) throw new Error('download failed');
-                        const url = URL.createObjectURL(await resp.blob());
-                        const a2 = document.createElement('a');
-                        a2.href = url; a2.download = p.split('/').pop() || 'file';
-                        document.body.appendChild(a2); a2.click(); a2.remove();
-                        setTimeout(() => URL.revokeObjectURL(url), 10000);
-                      } catch (e) { BISA.toast(`⚠ ${e.message}`); }
-                    };
-                    fOut.appendChild(dl);
-                  } else { fOut.textContent = `⚠ ${r.output || r.status}`; }
-                  break;
-                }
-              }
-            } catch (e) { fOut.textContent = `⚠ ${e.message}`; }
+              const r = await pollCorpRun(runId, fOut, { filename: p.split('/').pop() });
+              if (r && r.status === 'done' && r.hasFile) downloadRun(runId, p.split('/').pop());
+            } catch (e) { fOut.style.display = ''; fOut.textContent = `⚠ ${e.message}`; }
             fBtn.disabled = false;
           };
           fBtn.onclick = runFetch;
           fIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') runFetch(); });
           fRow.append(fIn, fBtn);
 
-          corpCard.append(exRow, exOut, fRow, fOut);
+          // push file (iPad → corp)
+          const pPath = elx('input');
+          pPath.placeholder = 'write to corp path, e.g. /tmp/hotfix.sh';
+          pPath.autocapitalize = 'off'; pPath.spellcheck = false;
+          pPath.style.cssText = 'width:100%;margin-top:8px;font-family:ui-monospace,monospace;font-size:.85rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink);';
+          const pText = elx('textarea');
+          pText.placeholder = 'file contents…';
+          pText.style.cssText = 'width:100%;margin-top:6px;min-height:70px;font-family:ui-monospace,monospace;font-size:.82rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);color:var(--ink);';
+          const pBtn = elx('button', 'btn', '⬆ Push to corp'); pBtn.style.cssText = 'margin-top:6px;min-height:40px;';
+          const pOut = elx('div', 'ops-out'); pOut.style.display = 'none';
+          pBtn.onclick = async () => {
+            const path2 = pPath.value.trim(); const content = pText.value;
+            if (!path2) return;
+            pBtn.disabled = true;
+            try { const { runId } = await bpost('/api/corp/push', { path: path2, content }); await pollCorpRun(runId, pOut); }
+            catch (e) { pOut.style.display = ''; pOut.textContent = `⚠ ${e.message}`; }
+            pBtn.disabled = false;
+          };
+
+          corpCard.append(exRow, exOut, fRow, fOut, pPath, pText, pBtn, pOut);
         }
 
         // Re-render to update the countdown / auto-relock.
