@@ -423,7 +423,12 @@
     const sec = Math.max(0, Math.floor((Date.now() - runT0) / 1000));
     const t = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
     const parts = [];
-    if (u && u.out) parts.push('⚡ ' + fmtTokens(u.out) + ' tokens');
+    // usage dos eventos assistant reporta ~1-5 tokens por snapshot (quirk do
+    // streaming — teste 2026-07-15 mostrou "27 tokens" num turno de parágrafos);
+    // estima pelo texto streamado (~4 chars/token) e usa o maior dos dois.
+    const est = Math.round((String(msg.text || '').length + String(msg.thinking || '').length) / 4);
+    const out = Math.max((u && u.out) || 0, est);
+    if (out) parts.push('⚡ ~' + fmtTokens(out) + ' tokens');
     if (u && u.model) parts.push(esc(fmtModel(u.model)));
     tickEl.innerHTML = parts.map((p) => `<span>${p}</span>`).join('<span class="hud-sep">·</span>') +
       (parts.length ? '<span class="hud-sep">·</span>' : '') + `<span class="hud-tick-t">${t}</span>`;
