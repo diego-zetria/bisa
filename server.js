@@ -305,6 +305,10 @@ const BISO_JOURNAL = process.env.BISO_JOURNAL || path.join(BISO_DIR, 'codex', 'j
 const makeBisoBridge = require('./lib/biso-bridge');
 app.use(makeBisoBridge({ requireAuth, BISO_URL, BISO_TOKEN }).router);
 
+// I6 — botão "algo está estranho 🛟": pacote de diagnóstico + aviso ao Diego.
+const makeDiagnostico = require('./lib/diagnostico');
+app.use(makeDiagnostico({ requireAuth, CWD, BISO_URL, BISO_TOKEN }));
+
 // === ponte de eventos remotos (biso /api/events → Web Push + WS) ============
 // Eventos do corp-watch (menções/DMs do Slack corp etc.) chegam ao biso; esta
 // ponte faz poll com cursor e transforma push:true em notificação nativa no
