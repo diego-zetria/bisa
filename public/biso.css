@@ -463,8 +463,12 @@
 .wp-pred-bar { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--biso-line) 60%, transparent); overflow: hidden; }
 .wp-pred-bar i { display: block; height: 100%; background: var(--biso-primary); border-radius: 3px; transition: width .35s ease; }
 .wp-pred-pct { font-size: .8rem; font-weight: 700; color: var(--biso-primary); min-width: 38px; text-align: right; }
-.wp-pred-chip { background: transparent; color: var(--biso-ink-soft); border: 1px dashed var(--biso-line);
-  border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: .85rem; font-style: italic; }
+/* chip de sugestão COM CARA DE BOTÃO — no vídeo 2026-07-15 as sugestões nunca
+   foram tocadas: o tracejado transparente lia como decoração, não como ação. */
+.wp-pred-chip { background: color-mix(in srgb, var(--biso-primary) 10%, transparent);
+  color: var(--biso-ink); border: 1px solid color-mix(in srgb, var(--biso-primary) 40%, transparent);
+  border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: .85rem; cursor: pointer; }
+.wp-pred-chip:active { background: color-mix(in srgb, var(--biso-primary) 22%, transparent); }
 /* limpar ditado com o Claude — modos por destino + volta ao bruto */
 .wp-modes { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .wp-modes-lbl { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--biso-ink-soft); opacity: .7; }
@@ -612,3 +616,71 @@
 .biso-action-tile .ic { font-size: 1.5rem; line-height: 1; }
 .biso-action-tile .lb { font-size: .72rem; text-align: center; line-height: 1.15; color: var(--biso-ink-soft); }
 .biso-action-tile.edit { border-style: dashed; }
+
+/* ── HUD de atividade do caderno (turno rodando) ─────────────────────────── */
+.nb-hud { margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--biso-line);
+  border-radius: 12px; background: color-mix(in srgb, var(--biso-line) 12%, transparent);
+  display: flex; flex-direction: column; gap: 6px; font-size: .86rem; }
+.nb-hud:empty { display: none; }
+.hud-todos:empty, .hud-steps:empty, .hud-think:empty, .hud-tick:empty { display: none; }
+.hud-todo { display: flex; gap: 8px; align-items: baseline; color: var(--biso-ink-soft); padding: 1px 0; }
+.hud-todo.done { opacity: .55; text-decoration: line-through; }
+.hud-todo.run { color: var(--biso-ink); font-weight: 600; }
+.hud-todo.run span { color: var(--biso-primary); }
+.hud-steps { display: flex; flex-direction: column; gap: 3px; }
+.hud-step { display: flex; gap: 8px; align-items: center; color: var(--biso-ink-soft); min-height: 22px; }
+.hud-step.run { color: var(--biso-ink); }
+.hud-step.done .hud-ic { color: var(--biso-primary); }
+.hud-step.sum { opacity: .6; font-size: .8rem; }
+.hud-dur { margin-left: auto; opacity: .55; font-size: .75rem; font-variant-numeric: tabular-nums; }
+.hud-spin { display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--biso-line); border-top-color: var(--biso-primary);
+  animation: hud-spin .8s linear infinite; }
+@keyframes hud-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hud-spin { animation: none; } }
+.hud-think-tg { background: none; border: none; color: var(--biso-ink-soft); font-size: .82rem;
+  padding: 2px 0; cursor: pointer; }
+.hud-think-bd { max-height: 110px; overflow-y: auto; font-style: italic; opacity: .6;
+  font-size: .8rem; white-space: pre-wrap; padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--biso-line); }
+.hud-tick { display: flex; gap: 6px; align-items: center; font-size: .76rem;
+  color: var(--biso-ink-soft); font-variant-numeric: tabular-nums; opacity: .8; }
+.hud-sep { opacity: .4; }
+
+/* timeline preservada dentro do accordion "processo" */
+.nb-proc-steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px dashed var(--biso-line); font-size: .82rem; }
+
+/* ── arquivos do turno ───────────────────────────────────────────────────── */
+.nb-files { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; }
+.nb-files-lbl { font-size: .76rem; color: var(--biso-ink-soft); opacity: .8; margin-right: 2px; }
+.nb-file-chip { background: color-mix(in srgb, var(--biso-primary) 12%, transparent);
+  color: var(--biso-ink); border: 1px solid color-mix(in srgb, var(--biso-primary) 45%, transparent);
+  border-radius: 999px; padding: 5px 12px; font-size: .82rem; cursor: pointer; min-height: 34px; }
+.nb-file-ov { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 24px; }
+.nb-file-box { background: var(--biso-bg, #111); border: 1px solid var(--biso-line);
+  border-radius: 14px; max-width: 860px; width: 100%; max-height: 82vh;
+  display: flex; flex-direction: column; overflow: hidden; }
+.nb-file-head { display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--biso-line); font-weight: 600; }
+.nb-file-x { background: none; border: none; color: var(--biso-ink-soft); font-size: 1.1rem;
+  cursor: pointer; padding: 4px 8px; }
+.nb-file-bd { overflow: auto; padding: 14px; }
+.nb-file-pre { white-space: pre-wrap; font-size: .82rem; margin: 0; }
+
+/* ── tabelas e código na resposta ────────────────────────────────────────── */
+.nb-tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.nb-tbl-scroll table { min-width: max-content; }
+.nb-tbl-scroll td, .nb-tbl-scroll th { word-break: keep-all; hyphens: none; }
+.resp-body pre { position: relative; }
+.nb-copy { position: absolute; top: 6px; right: 6px; font-size: .72rem;
+  background: color-mix(in srgb, var(--biso-line) 40%, transparent); color: var(--biso-ink-soft);
+  border: 1px solid var(--biso-line); border-radius: 8px; padding: 3px 9px; cursor: pointer; }
+
+/* ── pad de escrita: envio no topo + sugestões com cara de botão ─────────── */
+.wp-send-mini { margin-left: auto; background: var(--biso-primary); color: var(--biso-primary-ink);
+  border: none; border-radius: 999px; padding: 6px 14px; font-size: .82rem; font-weight: 600;
+  cursor: pointer; min-height: 34px; }
+.wp-send-mini:disabled { opacity: .35; cursor: default; }
+.con-head .wp-count { margin-left: 0; }

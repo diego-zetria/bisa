@@ -348,24 +348,175 @@
   // trabalho) e fica recolhido — a resposta em destaque é o que se relê.
   // No live, o texto flui inteiro (acompanhar o processo é o ponto).
   const SEG_RE = /\n*<!--biso-seg-->\n*/;
+
+  // ── HUD de atividade (enquanto o turno roda) ──────────────────────────────
+  // Preenche o vazio do "pensando" com o que está acontecendo por trás dos
+  // panos (vídeo 2026-07-15: 20s de tela preta + pílula minúscula): checklist
+  // do TodoWrite, timeline de ferramentas com duração, pensamento colapsável
+  // e ticker de tokens/modelo. Colapsa no finalize — o accordion "processo"
+  // vira o histórico.
+  const HUD_STEP_ICON = { read: '📖', bash: '⚡', web: '🌐', edit: '✍️' };
+  const fmtTokens = (n) => n >= 1000 ? (n / 1000).toFixed(1).replace('.0', '') + 'k' : String(n || 0);
+  const fmtModel = (m) => String(m || '').replace(/^claude-/, '').replace(/-\d{8}$/, '');
+  const fmtDur = (ms) => ms == null ? '' : ms < 1000 ? '<1s' : Math.round(ms / 1000) + 's';
+  function paintHud(card, msg) {
+    let hud = card.querySelector('.nb-hud');
+    if (!hud) {
+      hud = elx('div', 'nb-hud');
+      hud.innerHTML = '<div class="hud-todos"></div><div class="hud-steps"></div><div class="hud-think"></div><div class="hud-tick"></div>';
+      const head = card.querySelector('.resp-head');
+      if (head) head.after(hud); else card.prepend(hud);
+    }
+    // checklist viva (TodoWrite)
+    const todosEl = hud.querySelector('.hud-todos');
+    if (msg.todos && msg.todos.length) {
+      const html = msg.todos.map((t) => {
+        const st = t.status === 'completed' ? 'done' : t.status === 'in_progress' ? 'run' : 'todo';
+        const ic = st === 'done' ? '☑' : st === 'run' ? '▸' : '○';
+        return `<div class="hud-todo ${st}"><span>${ic}</span>${esc(t.content)}</div>`;
+      }).join('');
+      if (todosEl._html !== html) { todosEl.innerHTML = html; todosEl._html = html; }
+    }
+    // timeline de ferramentas — últimas 4 + resumo das anteriores
+    const stepsEl = hud.querySelector('.hud-steps');
+    const tools = msg.tools || [];
+    if (tools.length) {
+      const MAXV = 4;
+      const older = tools.length > MAXV ? tools.slice(0, tools.length - MAXV) : [];
+      const shown = tools.slice(-MAXV);
+      let html = older.length
+        ? `<div class="hud-step done sum">✓ ${older.length} ${older.length === 1 ? 'passo anterior' : 'passos anteriores'}</div>` : '';
+      html += shown.map((t) => {
+        const run = t.status !== 'done';
+        const ic = HUD_STEP_ICON[toolMsgKey(t.name)] || '🔧';
+        const dur = run ? '' : `<span class="hud-dur">${fmtDur(t.durationMs)}</span>`;
+        return `<div class="hud-step ${run ? 'run' : 'done'}">` +
+          `<span class="hud-ic">${run ? '<i class="hud-spin"></i>' : '✓'}</span>` +
+          `${ic} ${esc(toolLabel(t.name, t.detail) || t.summaryPt || t.name || 'ferramenta')}${dur}</div>`;
+      }).join('');
+      if (stepsEl._html !== html) { stepsEl.innerHTML = html; stepsEl._html = html; }
+    }
+    // pensamento (colapsa sozinho quando a resposta/ferramentas começam)
+    const thinkEl = hud.querySelector('.hud-think');
+    if (msg.thinking) {
+      if (!thinkEl._built) {
+        thinkEl._built = true;
+        thinkEl.innerHTML = '<button class="hud-think-tg">💭 pensando…</button><div class="hud-think-bd"></div>';
+        onTap(thinkEl.querySelector('.hud-think-tg'), () => {
+          thinkEl._open = !thinkEl._open;
+          thinkEl.querySelector('.hud-think-bd').style.display = thinkEl._open ? '' : 'none';
+        });
+        thinkEl._open = true;
+      }
+      const bd = thinkEl.querySelector('.hud-think-bd');
+      const tail = msg.thinking.slice(-600);
+      if (bd._txt !== tail) { bd.textContent = tail; bd._txt = tail; bd.scrollTop = bd.scrollHeight; }
+      // auto-colapso: primeira ferramenta ou texto de resposta chegou
+      if (thinkEl._open && !thinkEl._autoDone && ((msg.tools || []).length || msg.text)) {
+        thinkEl._autoDone = true; thinkEl._open = false; bd.style.display = 'none';
+      }
+      thinkEl.querySelector('.hud-think-tg').textContent = (thinkEl._open ? '▾' : '▸') + ' 💭 pensando…';
+    }
+    // ticker: tokens · modelo · tempo (o tempo atualiza no tick do paintRunStatus)
+    const tickEl = hud.querySelector('.hud-tick');
+    const u = msg.usage;
+    const sec = Math.max(0, Math.floor((Date.now() - runT0) / 1000));
+    const t = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    const parts = [];
+    if (u && u.out) parts.push('⚡ ' + fmtTokens(u.out) + ' tokens');
+    if (u && u.model) parts.push(esc(fmtModel(u.model)));
+    tickEl.innerHTML = parts.map((p) => `<span>${p}</span>`).join('<span class="hud-sep">·</span>') +
+      (parts.length ? '<span class="hud-sep">·</span>' : '') + `<span class="hud-tick-t">${t}</span>`;
+  }
+
+  // pós-render da resposta final: tabela nunca quebra palavra (vídeo: "Alemanh/a")
+  // — rola horizontal dentro do card; blocos de código ganham botão copiar.
+  function enhanceRespBody(body) {
+    body.querySelectorAll('table').forEach((tb) => {
+      if (tb.closest('.nb-tbl-scroll')) return;
+      const w = elx('div', 'nb-tbl-scroll');
+      tb.before(w); w.appendChild(tb);
+    });
+    body.querySelectorAll('pre').forEach((pre) => {
+      if (pre.querySelector('.nb-copy') || !pre.textContent.trim()) return;
+      const b = elx('button', 'nb-copy', '⧉ copiar');
+      b.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(pre.textContent.replace(/⧉ copiar$/, '')); b.textContent = '✓ copiado'; }
+        catch { b.textContent = '✗'; }
+        setTimeout(() => { b.textContent = '⧉ copiar'; }, 1600);
+      });
+      pre.appendChild(b);
+    });
+  }
+
+  // 📁 arquivos criados/editados no turno → chips tocáveis com preview
+  function renderTurnFiles(card, msg) {
+    if (card.querySelector('.nb-files')) return;
+    const files = new Map();   // path → 'criado' | 'editado'
+    (msg.tools || []).forEach((t) => {
+      if (toolMsgKey(t.name) !== 'edit') return;
+      const f = t.detail && (t.detail.file_path || t.detail.path || t.detail.notebook_path);
+      if (!f) return;
+      const kind = /^write/i.test(t.name || '') && !files.has(String(f)) ? 'criado' : (files.get(String(f)) || 'editado');
+      files.set(String(f), kind);
+    });
+    if (!files.size) return;
+    const wrap = elx('div', 'nb-files');
+    wrap.appendChild(elx('span', 'nb-files-lbl', '📁 arquivos deste turno'));
+    for (const [p, kind] of files) {
+      const b = elx('button', 'nb-file-chip', (kind === 'criado' ? '✚ ' : '✎ ') + p.split('/').pop());
+      b.title = p;
+      onTap(b, () => openFilePreview(p));
+      wrap.appendChild(b);
+    }
+    const foot = card.querySelector('.resp-foot');
+    if (foot) card.insertBefore(wrap, foot); else card.appendChild(wrap);
+  }
+  async function openFilePreview(absPath) {
+    const ov = elx('div', 'nb-file-ov');
+    const box = elx('div', 'nb-file-box');
+    box.innerHTML = `<div class="nb-file-head"><span>${esc(absPath.split('/').pop())}</span><button class="nb-file-x">✕</button></div><div class="nb-file-bd"><span class="biso-muted">carregando…</span></div>`;
+    ov.appendChild(box); document.body.appendChild(ov);
+    ov.addEventListener('click', () => ov.remove());
+    box.addEventListener('click', (e) => e.stopPropagation());
+    onTap(box.querySelector('.nb-file-x'), () => ov.remove());
+    const bd = box.querySelector('.nb-file-bd');
+    try {
+      const r = await BISA.api('/biso-chat/file?path=' + encodeURIComponent(absPath));
+      if (/\.(md|markdown)$/i.test(r.name)) bd.innerHTML = BISA.renderMarkdown(r.content);
+      else { const pre = elx('pre', 'nb-file-pre', ''); pre.textContent = r.content; bd.innerHTML = ''; bd.appendChild(pre); }
+    } catch (e) { bd.innerHTML = `<span class="biso-muted">⚠ ${esc(e.message || 'não deu para abrir')}</span>`; }
+  }
+
   function paintClaude(card, msg, live) {
     const toolsEl = card.querySelector('.resp-tools');
     const body = card.querySelector('.resp-body');
     if (toolsEl) toolsEl.innerHTML = toolChips(msg.tools);
     if (!body) return;
-    if (live) { renderLiveBody(body, msg); return; }
+    if (live) { paintHud(card, msg); renderLiveBody(body, msg); return; }
+    const hud = card.querySelector('.nb-hud'); if (hud) hud.remove();
     msg._blkEls = null;
     const parts = String(msg.text || '').split(SEG_RE).map((s) => s.trim());
     const answer = parts.length ? parts[parts.length - 1] : '';
     const proc = parts.slice(0, -1).filter(Boolean);
     if (!proc.length || !answer) {
       body.innerHTML = BISA.renderMarkdown(parts.filter(Boolean).join('\n\n')) || '<span class="biso-muted">…</span>';
+      enhanceRespBody(body);
+      renderTurnFiles(card, msg);
       return;
     }
     body.innerHTML = '';
     const tg = elx('button', 'nb-proc-toggle', `▸ processo · ${proc.length} ${proc.length === 1 ? 'etapa' : 'etapas'}`);
     const bd = elx('div', 'nb-proc-body');
     bd.innerHTML = BISA.renderMarkdown(proc.join('\n\n'));
+    // o processo guarda a timeline do turno: passos com duração viram histórico
+    const steps = (msg.tools || []).filter((t) => t.name);
+    if (steps.length) {
+      const tl = elx('div', 'nb-proc-steps');
+      tl.innerHTML = steps.map((t) =>
+        `<div class="hud-step done">✓ ${HUD_STEP_ICON[toolMsgKey(t.name)] || '🔧'} ${esc(toolLabel(t.name, t.detail) || t.name)}<span class="hud-dur">${fmtDur(t.durationMs)}</span></div>`).join('');
+      bd.prepend(tl);
+    }
     bd.style.display = 'none';
     tg.addEventListener('click', () => {
       const open = bd.style.display === 'none';
@@ -375,6 +526,8 @@
     const ans = elx('div', 'nb-answer');
     ans.innerHTML = BISA.renderMarkdown(answer);
     body.append(tg, bd, ans);
+    enhanceRespBody(body);
+    renderTurnFiles(card, msg);
   }
   // preenche o rodapé do card com chips de sugestão + ESCREVER + OUVIR (inline)
   function fillChips(card, msg) {
@@ -745,6 +898,9 @@
     pill.querySelector('.think-lbl').textContent = lbl;
     pill.querySelector('.think-tool').textContent = toolLabel(curTool, curToolDetail);   // o que ele está fazendo agora
     pill.querySelector('.think-t').textContent = t;
+    // o relógio do HUD acompanha o mesmo tick de 1s
+    const hudT = document.querySelector('.nb-hud .hud-tick-t');
+    if (hudT) hudT.textContent = t;
     if (nbInterrupt) { nbInterrupt.style.display = ''; nbInterrupt.textContent = en ? '■ stop' : '■ parar'; }
   }
   // easter egg: acertar o sprite dá +10; recorde por dispositivo no localStorage
@@ -816,7 +972,7 @@
     const ue = entryUserEl(text);
     nbPage.appendChild(ue);
 
-    const cmsg = { role: 'claude', text: '', html: '', tools: [], suggestions: [] };
+    const cmsg = { role: 'claude', text: '', html: '', tools: [], suggestions: [], todos: null, thinking: '', usage: null };
     convo.push(cmsg);
     const cel = entryClaudeEl(cmsg, true);
     nbPage.appendChild(cel);
@@ -838,6 +994,9 @@
       case 'biso.llm.state': setStatus(ev.state); break;
       case 'biso.llm.text': if (ev.delta) streamDelta(ev.delta); break;
       case 'biso.llm.tool': streamTool(ev); break;
+      case 'biso.llm.thinking': streamThinking(ev.delta); break;
+      case 'biso.llm.todos': streamTodos(ev.todos); break;
+      case 'biso.llm.usage': streamUsage(ev); break;
       case 'biso.llm.done': finalizeStream(); break;
       case 'biso.llm.error': errorStream(ev.message); break;
     }
@@ -855,15 +1014,36 @@
   function streamTool(ev) {
     if (!streaming) return;
     const tools = streaming.msg.tools;
-    if (ev.status === 'done' && !ev.name) {
-      // tool_result não traz o nome — fecha a ferramenta aberta mais antiga
-      const i = tools.findIndex(t => t.status !== 'done');
-      if (i >= 0) tools[i] = Object.assign({}, tools[i], { status: 'done' });
+    if (ev.status === 'done') {
+      // done agora chega com id (correlação servidor); fallback: mais antiga aberta
+      const i = ev.id ? tools.findIndex(t => t.id === ev.id)
+        : tools.findIndex(t => t.status !== 'done');
+      if (i >= 0) tools[i] = Object.assign({}, tools[i], { status: 'done', durationMs: ev.durationMs });
+      if (tools.every(t => t.status === 'done')) { curTool = null; curToolDetail = null; paintRunStatus(); }
     } else {
-      const i = tools.findIndex(t => t.name === ev.name && t.status === 'start');
+      const i = ev.id ? tools.findIndex(t => t.id === ev.id)
+        : tools.findIndex(t => t.name === ev.name && t.status === 'start');
       if (i >= 0) tools[i] = Object.assign({}, tools[i], ev); else tools.push(ev);
     }
     if (ev.status === 'start' && ev.name) { curTool = ev.name; curToolDetail = ev.detail || null; paintRunStatus(); }
+    if (streaming.el) scheduleStreamPaint();
+  }
+  // 💭 thinking do agente (colapsável no HUD); acumula por turno
+  function streamThinking(delta) {
+    if (!streaming || !delta) return;
+    streaming.msg.thinking = (streaming.msg.thinking || '') + delta;
+    if (streaming.el) scheduleStreamPaint();
+  }
+  // ☑ checklist viva do TodoWrite — snapshot substitui o anterior
+  function streamTodos(todos) {
+    if (!streaming || !Array.isArray(todos)) return;
+    streaming.msg.todos = todos;
+    if (streaming.el) scheduleStreamPaint();
+  }
+  // ⚡ tokens/modelo do turno (ticker do HUD)
+  function streamUsage(u) {
+    if (!streaming) return;
+    streaming.msg.usage = { out: u.out || 0, in: u.in || 0, model: u.model || '' };
     if (streaming.el) scheduleStreamPaint();
   }
   function finalizeStream() {
@@ -1163,7 +1343,7 @@
     pad.innerHTML = `
       <div class="wp-kb"><span>⌨ ancore o teclado aqui</span></div>
       <div class="biso-nb-console wp-card">
-        <div class="con-head"><span class="con-lbl">✎ resposta</span><span class="con-sys">biso://caderno</span><button class="wp-lang"></button><span class="wp-count">0 palavras</span></div>
+        <div class="con-head"><span class="con-lbl">✎ resposta</span><span class="con-sys">biso://caderno</span><button class="wp-lang"></button><span class="wp-count">0 palavras</span><button class="wp-send-mini" disabled>Enviar ↑</button></div>
         <div class="biso-nb-input wp-box" contenteditable="true" data-ph="✎ Escreva aqui com a caneta…" autocapitalize="sentences" spellcheck="false"></div>
       </div>
       <div class="wp-predict"></div>
@@ -1193,6 +1373,10 @@
       live.classList.remove('clean');   // texto novo → a prévia limpa era de outro momento
       const n = t.trim() ? t.trim().split(/\s+/).length : 0;
       count.textContent = n + (n === 1 ? ' palavra' : ' palavras');
+      // envio alternativo no TOPO do pad — o teclado flutuante do iPad cobria o
+      // "Enviar ↑" de baixo (vídeo 2026-07-15: botão cortado como "nviar ↑")
+      const mini = pad.querySelector('.wp-send-mini');
+      if (mini) mini.disabled = !hasRealText(t);
       dock.scrollTop = dock.scrollHeight;   // dock acompanha o fim do texto
       // rascunho persistente: o pad "some no re-render" (ver close abaixo) —
       // re-render/reload/troca de app não pode custar texto ditado
@@ -1208,14 +1392,18 @@
     // prováveis; tocar num chip anexa a continuação. Respostas velhas (seq) e
     // pad fechado são descartados.
     const predEl = pad.querySelector('.wp-predict');
-    let predSeq = 0, predTimer = 0;
+    let predSeq = 0, predTimer = 0, predEma = null;
     const renderPredict = ({ confidence, completions }, draft) => {
       predEl.innerHTML = '';
       if (!confidence && !(completions || []).length) return;
+      // EMA: o % cru saltava sem lógica aparente (85→28→75 no vídeo 2026-07-15)
+      // — suaviza para o medidor contar uma história em vez de piscar.
+      const conf = Math.round(predEma == null ? confidence : 0.55 * predEma + 0.45 * (confidence || 0));
+      predEma = conf;
       const meter = elx('div', 'wp-pred-meter');
       meter.innerHTML = `<span class="wp-pred-lbl">🔮 contexto</span>` +
-        `<span class="wp-pred-bar"><i style="width:${confidence}%"></i></span>` +
-        `<span class="wp-pred-pct">${confidence}%</span>`;
+        `<span class="wp-pred-bar"><i style="width:${conf}%"></i></span>` +
+        `<span class="wp-pred-pct">${conf}%</span>`;
       predEl.appendChild(meter);
       logMetric('previsao', { confidence, n: (completions || []).length });
       (completions || []).forEach((c) => {
@@ -1401,6 +1589,7 @@
       close(); commitText(t);
     }
     onTap(pad.querySelector('.wp-send'), sendPad);
+    onTap(pad.querySelector('.wp-send-mini'), sendPad);
     onTap(pad.querySelector('.wp-cancel'), close);
   }
 
