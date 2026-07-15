@@ -657,17 +657,43 @@
 .nb-file-chip { background: color-mix(in srgb, var(--biso-primary) 12%, transparent);
   color: var(--biso-ink); border: 1px solid color-mix(in srgb, var(--biso-primary) 45%, transparent);
   border-radius: 999px; padding: 5px 12px; font-size: .82rem; cursor: pointer; min-height: 34px; }
-.nb-file-ov { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 60;
-  display: flex; align-items: center; justify-content: center; padding: 24px; }
-.nb-file-box { background: var(--biso-bg, #111); border: 1px solid var(--biso-line);
-  border-radius: 14px; max-width: 860px; width: 100%; max-height: 82vh;
-  display: flex; flex-direction: column; overflow: hidden; }
-.nb-file-head { display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; border-bottom: 1px solid var(--biso-line); font-weight: 600; }
-.nb-file-x { background: none; border: none; color: var(--biso-ink-soft); font-size: 1.1rem;
-  cursor: pointer; padding: 4px 8px; }
-.nb-file-bd { overflow: auto; padding: 14px; }
-.nb-file-pre { white-space: pre-wrap; font-size: .82rem; margin: 0; }
+/* Leitor de arquivo — dentro do .biso-root (herda tema); topo com faixa da
+   cor primária, título forte, corpo com tipografia de leitura e cores. */
+.nb-file-ov { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.nb-file-box { background: var(--biso-surface); color: var(--biso-ink);
+  border: 1px solid var(--biso-line); border-top: 3px solid var(--biso-primary);
+  border-radius: 16px; max-width: 900px; width: 100%; max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+.nb-file-head { display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--biso-line);
+  background: var(--biso-surface-2); }
+.nb-file-ic { font-size: 1.5rem; line-height: 1; }
+.nb-file-tt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.nb-file-name { font-weight: 700; font-size: 1.02rem; color: var(--biso-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-file-path { font-family: var(--biso-mono); font-size: .68rem;
+  color: var(--biso-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-file-x { background: color-mix(in srgb, var(--biso-line) 45%, transparent);
+  border: none; color: var(--biso-ink); font-size: 1rem; border-radius: 999px;
+  cursor: pointer; width: 38px; height: 38px; flex: 0 0 auto; }
+.nb-file-bd { overflow: auto; padding: 18px 22px 26px; -webkit-overflow-scrolling: touch; }
+.nb-file-bd .resp-body { font-size: .95rem; line-height: 1.6; color: var(--biso-ink); }
+.nb-file-bd .resp-body h1 { font-size: 1.35rem; color: var(--biso-primary);
+  border-bottom: 1px solid var(--biso-line); padding-bottom: 8px; margin: 4px 0 14px; }
+.nb-file-bd .resp-body h2 { font-size: 1.12rem; color: var(--biso-ink); margin: 20px 0 8px;
+  padding-left: 10px; border-left: 3px solid var(--biso-primary); }
+.nb-file-bd .resp-body h3 { font-size: 1rem; color: var(--biso-ink); margin: 16px 0 6px; }
+.nb-file-bd .resp-body a { color: var(--biso-primary); }
+.nb-file-bd .resp-body blockquote { border-left: 3px solid var(--biso-primary);
+  background: color-mix(in srgb, var(--biso-primary) 7%, transparent);
+  margin: 10px 0; padding: 8px 14px; border-radius: 0 8px 8px 0; color: var(--biso-ink); }
+.nb-file-bd .resp-body li { margin: 3px 0; }
+.nb-file-bd .resp-body hr { border: none; border-top: 1px solid var(--biso-line); margin: 16px 0; }
+.nb-file-pre { white-space: pre-wrap; font-size: .84rem; margin: 0;
+  font-family: var(--biso-mono); color: var(--biso-ink); }
 
 /* ── tabelas e código na resposta ────────────────────────────────────────── */
 .nb-tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }

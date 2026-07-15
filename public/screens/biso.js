@@ -477,19 +477,35 @@
     const foot = card.querySelector('.resp-foot');
     if (foot) card.insertBefore(wrap, foot); else card.appendChild(wrap);
   }
+  const FILE_ICON = [[/\.(md|markdown)$/i, '📝'], [/\.(sh|zsh|bash)$/i, '⚡'], [/\.(tf|tfvars|ya?ml|toml|ini|conf)$/i, '⚙️'], [/\.(js|ts|jsx|tsx|py|rb|go|rs)$/i, '🧩'], [/\.(json|csv)$/i, '🗂']];
+  const fileIcon = (name) => (FILE_ICON.find(([re]) => re.test(name)) || [0, '📄'])[1];
   async function openFilePreview(absPath) {
+    const name = absPath.split('/').pop();
     const ov = elx('div', 'nb-file-ov');
     const box = elx('div', 'nb-file-box');
-    box.innerHTML = `<div class="nb-file-head"><span>${esc(absPath.split('/').pop())}</span><button class="nb-file-x">✕</button></div><div class="nb-file-bd"><span class="biso-muted">carregando…</span></div>`;
-    ov.appendChild(box); document.body.appendChild(ov);
+    box.innerHTML = `<div class="nb-file-head">` +
+      `<span class="nb-file-ic">${fileIcon(name)}</span>` +
+      `<div class="nb-file-tt"><span class="nb-file-name">${esc(name)}</span><span class="nb-file-path">${esc(absPath)}</span></div>` +
+      `<button class="nb-file-x">✕</button></div>` +
+      `<div class="nb-file-bd biso-resp"><div class="resp-body"><span class="biso-muted">carregando…</span></div></div>`;
+    // DENTRO do .biso-root: os tokens --biso-* (e o tema ativo) são escopados
+    // nele — no body os var() caíam em fallback cinza (leitura ruim, vídeo
+    // 2026-07-15 18:11).
+    (document.querySelector('.biso-root') || document.body).appendChild(ov);
+    ov.appendChild(box);
     ov.addEventListener('click', () => ov.remove());
     box.addEventListener('click', (e) => e.stopPropagation());
     onTap(box.querySelector('.nb-file-x'), () => ov.remove());
-    const bd = box.querySelector('.nb-file-bd');
+    const bd = box.querySelector('.resp-body');
     try {
       const r = await BISA.api('/biso-chat/file?path=' + encodeURIComponent(absPath));
-      if (/\.(md|markdown)$/i.test(r.name)) bd.innerHTML = BISA.renderMarkdown(r.content);
-      else { const pre = elx('pre', 'nb-file-pre', ''); pre.textContent = r.content; bd.innerHTML = ''; bd.appendChild(pre); }
+      if (/\.(md|markdown)$/i.test(r.name)) {
+        bd.innerHTML = BISA.renderMarkdown(r.content);
+        enhanceRespBody(bd);   // tabelas roláveis + copiar nos fences, como nos cards
+      } else {
+        const pre = elx('pre', 'nb-file-pre', ''); pre.textContent = r.content;
+        bd.innerHTML = ''; bd.appendChild(pre);
+      }
     } catch (e) { bd.innerHTML = `<span class="biso-muted">⚠ ${esc(e.message || 'não deu para abrir')}</span>`; }
   }
 
