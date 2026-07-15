@@ -3,3 +3,9 @@ node_modules/
 *.log
 .DS_Store
 .playwright-mcp/
+
+# runtime state (LLM session/usage) — regenerated, not source of truth
+.meta/
+
+# dated backup files (e.g. *.bak-2026-06-23)
+*.bak-*
