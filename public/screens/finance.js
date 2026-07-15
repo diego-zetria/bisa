@@ -4,13 +4,13 @@
 // análise da IA, categorias, carteira), direita acionável (controle do mês,
 // lançamentos, objetivos). Vira coluna única no celular. Texto em pt-BR.
 //
-// Endpoint shapes verificados em 2026-06-12:
-//   GET  /finance/summary   → {month, cash:{income,expense,net,byCategory,incomeByCategory,manual[]}, invest:{positions[]}}
-//   GET  /finance/profile   → {profile: null | {goals[],loans[],budget[],fx}, loans:[...], onboarding:{answered}}
-//   GET  /finance/positions → {positions:[]}   — vazio se ledger vazio; hideable
-//   POST /finance/tx        → body {date,kind,amount,category,desc} → {ok,tx}
-//   DELETE /finance/tx      → ?id=<id>
-//   PATCH /finance/budget   → body {category, amount}
+// Endpoints usados (inventário completo em docs/finance.md):
+//   GET    /finance/summary?month= · /finance/profile · /finance/positions
+//   POST   /finance/tx {date,kind,amount,category,desc,bucket?,goalId?,pending?,creditGoal?}
+//   PATCH  /finance/tx {id,...campos,creditGoal?} — edição in-place
+//   DELETE /finance/tx?id=&creditGoal=1?
+//   POST/PATCH/DELETE /finance/budget · /finance/objectives · /finance/tags
+//   PATCH  /finance/allocation {bucket, pct|amount|rest} · /finance/fx {rate}
 
 (function () {
   // Estilos com escopo (injeta uma vez) — layout + componentes da tela.
@@ -43,7 +43,7 @@
         color:var(--ink-soft); font-weight:600; }
       .fin-hero-balance { font-size:2.4rem; font-weight:700; line-height:1.1; margin:2px 0 16px;
         letter-spacing:-.02em; }
-      .fin-hero-balance.positive { color:var(--positive); }
+      .fin-hero-balance.positive { color:#2f9e63; } /* verde vivo no hero (pedido 2026-07-10); --positive (sage) segue no resto */
       .fin-hero-balance.negative { color:var(--negative); }
       .fin-hero-seg { display:flex; height:10px; border-radius:999px; overflow:hidden;
         background:var(--surface-2); margin-bottom:14px; }
@@ -56,6 +56,7 @@
       .fin-hero-sub .dot { width:9px; height:9px; border-radius:50%; }
       .fin-hero-sub .dot.in  { background:var(--positive); }
       .fin-hero-sub .dot.out { background:var(--negative); }
+      .fin-hero-sub .dot.pend { background:var(--warn); }
 
       /* ── Cabeçalho colapsável (Renda) ────────────────────────────────── */
       .fin-collapse-head { display:flex; align-items:center; gap:8px; cursor:pointer;
@@ -85,7 +86,8 @@
         border-left:2px solid var(--line); }
       .fin-sal-lbl { flex:1; min-width:0; font-size:.85rem; color:var(--ink-soft); }
       .fin-inc-sub { font-size:.7rem; padding:1px 8px; border-radius:999px; font-weight:700;
-        background:rgba(91,138,114,.18); color:var(--positive); }   /* badge "recebido" */
+        background:color-mix(in srgb, var(--positive) 18%, transparent); color:var(--positive); }   /* badge "recebido" */
+      .fin-inc-sub.pend { background:var(--warn-soft); color:var(--warn); } /* badge "a receber" */
       .fin-inc-extrahead { font-size:.74rem; text-transform:uppercase; letter-spacing:.06em;
         color:var(--ink-soft); font-weight:600; margin:16px 2px 2px; }
       .fin-inc-add { width:100%; margin-top:14px; border:1px dashed var(--primary);
@@ -170,13 +172,6 @@
         font-weight:600; cursor:pointer; min-height:var(--tap); padding:0 6px; font-size:.9rem; }
       .fin-item-del.confirm { font-weight:700; }
 
-      /* ── Categorias ──────────────────────────────────────────────────── */
-      .fin-cat-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:12px 0; }
-      .fin-cat-name { flex:1; font-size:.9rem; text-transform:capitalize; }
-      .fin-cat-bar-wrap { order:2; flex-basis:100%; background:var(--surface-2); border-radius:999px; height:8px; overflow:hidden; }
-      .fin-cat-bar { height:100%; border-radius:999px; background:var(--negative); transition:width .4s; }
-      .fin-cat-amt { order:1; min-width:84px; text-align:right; font-size:.85rem; color:var(--ink-soft); }
-
       /* ── Lançamentos ─────────────────────────────────────────────────── */
       .fin-sec-head { display:flex; align-items:center; gap:8px; margin:18px 2px 8px; }
       .fin-sec-head .fin-sec-title { flex:1; font-size:.8rem; text-transform:uppercase;
@@ -220,28 +215,21 @@
       .fin-loan-row { display:flex; justify-content:space-between; font-size:.85rem; color:var(--ink-soft); }
 
       /* ── Controle do mês (orçamento) ─────────────────────────────────── */
-      .fin-bud-alert { display:flex; align-items:center; gap:8px; background:rgba(176,88,79,.1);
+      .fin-bud-alert { display:flex; align-items:center; gap:8px; background:color-mix(in srgb, var(--negative) 10%, transparent);
         color:var(--negative); border-radius:var(--radius-sm); padding:9px 12px; font-size:.86rem;
         font-weight:600; margin-bottom:14px; }
       .fin-bud-alert.soft { background:var(--warn-soft); color:var(--warn); }
-      .fin-bud-group { margin-bottom:16px; }
-      .fin-bud-ghead { display:flex; justify-content:space-between; align-items:baseline; font-weight:600;
-        font-size:.92rem; margin:14px 0 6px; padding-bottom:4px; border-bottom:1px solid var(--line); }
-      .fin-bud-ghead-vals { font-size:.82rem; white-space:nowrap; }
-      .fin-bud-line { padding:10px 2px 8px; }
-      .fin-bud-row { display:flex; align-items:center; gap:10px; font-size:.92rem; }
       .fin-bud-status { width:11px; height:11px; border-radius:50%; flex:0 0 auto; }
       .fin-bud-status.st-pending { background:var(--line); }
       .fin-bud-status.st-ok { background:var(--positive); }
       .fin-bud-status.st-over { background:var(--negative); }
       .fin-bud-label { flex:1; min-width:0; }
       .fin-bud-due { font-size:.7rem; color:var(--ink-soft); padding:1px 6px; background:var(--surface-2); border-radius:999px; }
-      .fin-bud-due.overdue { background:rgba(176,88,79,.15); color:var(--negative); font-weight:600; }
+      .fin-bud-due.overdue { background:color-mix(in srgb, var(--negative) 15%, transparent); color:var(--negative); font-weight:600; }
       .fin-bud-due.soon { background:var(--warn-soft); color:var(--warn); font-weight:600; }
       .fin-bud-due.paid { text-decoration:line-through; opacity:.5; }   /* dia rabiscado quando pago */
       .fin-bud-paid { font-size:.7rem; padding:1px 8px; border-radius:999px; font-weight:700;
-        background:rgba(91,138,114,.18); color:var(--positive); }       /* badge "pago" verde */
-      .fin-bud-action { flex:0 0 auto; display:flex; align-items:center; gap:4px; }
+        background:color-mix(in srgb, var(--positive) 18%, transparent); color:var(--positive); }       /* badge "pago" verde */
       .fin-bud-pay { border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
         border-radius:var(--radius-sm); padding:0 18px; min-height:var(--tap); min-width:var(--tap);
         font-size:.9rem; font-weight:600; cursor:pointer; white-space:nowrap; }
@@ -249,18 +237,6 @@
       .fin-bud-pay.ghost { border:none; background:none; color:var(--ink-soft); min-width:var(--tap);
         padding:0 8px; font-size:1.2rem; font-weight:400; }
       .fin-bud-check { color:var(--positive); font-size:1.3rem; padding:0 4px; }
-      /* Barra grossa com os números (gasto/plano) embutidos + % à direita */
-      .fin-bud-bar2 { display:flex; align-items:center; gap:10px; margin:9px 0 0 21px; }
-      .fin-bud-bar2track { position:relative; flex:1; min-width:0; height:30px;
-        background:var(--surface-2); border-radius:9px; overflow:hidden; }
-      .fin-bud-bar2fill { position:absolute; left:0; top:0; bottom:0; border-radius:9px; transition:width .4s; }
-      .fin-bud-bar2nums { position:absolute; inset:0; display:flex; align-items:center;
-        justify-content:flex-end; gap:5px; padding:0 11px; font-size:.86rem;
-        white-space:nowrap; pointer-events:none; }
-      .fin-bud-bar2plan { pointer-events:auto; background:none; border:none; font:inherit;
-        font-size:.86rem; color:var(--ink-soft); cursor:pointer; padding:1px 2px;
-        border-bottom:1px dotted var(--ink-soft); }
-      .fin-bud-bar2plan:hover { color:var(--ink); }
       .fin-bud-caret { color:var(--ink-soft); font-size:.75rem; margin-right:6px; }
       /* Lançamentos expandidos por categoria de despesa */
       .fin-bud-sublist { margin:8px 0 2px 21px; padding:4px 0 0; border-top:1px dashed var(--line); }
@@ -275,22 +251,6 @@
       .fin-bud-subbtn.del.confirm { color:var(--negative); font-weight:700; font-size:.78rem; min-width:auto; padding:0 10px; }
       .fin-bud-subempty { color:var(--ink-soft); font-size:.84rem; padding:6px 2px; }
 
-      /* Modo Ordenar (arrastar localidades e itens) */
-      .fin-reorder-gblock { border:1px solid var(--line); border-radius:var(--radius-sm);
-        margin-bottom:10px; overflow:hidden; background:var(--surface); }
-      .fin-reorder-ghead { display:flex; align-items:center; gap:8px; background:var(--surface-2);
-        padding:8px 10px; font-weight:600; font-size:.95rem; }
-      .fin-reorder-gname { flex:1; min-width:0; }
-      .fin-reorder-items { padding:2px 0; }
-      .fin-reorder-item { display:flex; align-items:center; gap:8px; padding:6px 10px;
-        border-top:1px solid var(--line); background:var(--surface); }
-      .fin-reorder-iname { flex:1; min-width:0; font-size:.92rem; }
-      .fin-reorder-handle { color:var(--ink-soft); font-size:1.35rem; cursor:grab; touch-action:none;
-        flex:0 0 auto; min-width:34px; min-height:var(--tap); display:flex; align-items:center; justify-content:center; }
-      .fin-bud-foot { margin-top:16px; padding-top:12px; border-top:2px solid var(--line); }
-      .fin-bud-foot-row { display:flex; justify-content:space-between; align-items:baseline;
-        font-size:.92rem; font-weight:600; padding:3px 2px; }
-      .fin-bud-foot-left { margin-top:6px; padding-top:8px; border-top:1px dashed var(--line); }
       .fin-value-pos { color:var(--positive); }
       .fin-value-neg { color:var(--negative); }
 
@@ -313,8 +273,6 @@
       .fin-sort-row.on .fin-sort-rlabel { color:var(--primary); }
       .fin-sort-rdesc { font-size:.78rem; color:var(--ink-soft); }
       .fin-sort-rcheck { color:var(--primary); font-size:1.1rem; flex:0 0 auto; width:18px; text-align:center; }
-      .fin-sort-rchev { color:var(--ink-soft); font-size:1.35rem; flex:0 0 auto; line-height:1; }
-      .fin-sort-div { height:1px; background:var(--line); margin:5px 10px; }
 
       /* ── Sheet de valor (iPad + Pencil): campo Scribble + teclado grande ─ */
       .fin-amount-overlay { position:fixed; inset:0; background:rgba(0,0,0,.38);
@@ -350,6 +308,115 @@
         border:1px solid var(--line); border-radius:var(--radius-sm); padding:11px 13px; width:100%;
         min-height:var(--tap); text-align:left; color:var(--ink); cursor:pointer; }
       .fin-amount-display.is-empty { color:var(--ink-soft); }
+      /* ── Provisões do mês (anel de progresso) ─────────────────────────── */
+      .fin-prov-row { display:flex; align-items:center; gap:14px; padding:12px 0;
+        border-bottom:1px solid var(--line); }
+      .fin-prov-row:last-of-type { border-bottom:0; }
+      .fin-prov-ring { --p:0; --c:#5b8fd6; width:52px; height:52px; flex:0 0 auto;
+        border-radius:50%; display:grid; place-items:center; position:relative;
+        background:conic-gradient(var(--c) calc(var(--p)*1%), var(--surface-2) 0); }
+      .fin-prov-ring.warn { --c:var(--warn); }
+      .fin-prov-ring.over { --c:var(--negative); }
+      .fin-prov-ring::after { content:''; position:absolute; inset:6px; border-radius:50%;
+        background:var(--surface); }
+      .fin-prov-ring b { position:relative; z-index:1; font-size:.72rem; font-weight:800;
+        font-variant-numeric:tabular-nums; }
+      .fin-prov-mid { flex:1; min-width:0; cursor:pointer; }
+      .fin-prov-name { font-weight:650; }
+      .fin-prov-caret { color:var(--ink-soft); font-size:.72rem; }
+      .fin-prov-sub { font-size:.8rem; color:var(--ink-soft); margin-top:2px;
+        font-variant-numeric:tabular-nums; }
+      .fin-prov-sub.neg { color:var(--negative); }
+      .fin-prov-add { flex:0 0 auto; border:none; background:var(--accent-soft); color:var(--primary);
+        border-radius:50%; width:36px; height:36px; min-height:36px; font-size:1.15rem;
+        line-height:1; cursor:pointer; }
+      .fin-prov-sublist-holder { padding-bottom:6px; }
+      /* ── Controle do mês (Modelo A: anéis em linha) ───────────────────── */
+      .fin-envview-seg { display:flex; gap:4px; background:var(--surface-2); border-radius:999px;
+        padding:3px; margin:0 2px 14px; }
+      .fin-envview-opt { flex:1; border:none; background:none; color:var(--ink-soft);
+        border-radius:999px; padding:7px 10px; font:inherit; font-size:.82rem; font-weight:650;
+        cursor:pointer; min-height:34px; }
+      .fin-envview-opt.on { background:var(--surface); color:var(--ink); box-shadow:var(--shadow); }
+      .fin-envA-rings { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
+      .fin-envA-cell { flex:1; min-width:104px; text-align:center; cursor:pointer;
+        background:none; border:none; color:inherit; font:inherit; padding:8px 4px;
+        border-radius:var(--radius-sm); }
+      .fin-envA-cell.on { background:var(--accent-soft); }
+      .fin-envA-ring { --p:0; --c:#5b8fd6; width:76px; height:76px; margin:0 auto 8px;
+        border-radius:50%; position:relative; display:grid; place-items:center;
+        background:conic-gradient(var(--c) calc(var(--p)*1%), var(--surface-2) 0); }
+      .fin-envA-ring::after { content:''; position:absolute; inset:8px; border-radius:50%;
+        background:var(--surface); }
+      .fin-envA-cell.on .fin-envA-ring::after { background:var(--accent-soft); }
+      .fin-envA-ring b { position:relative; z-index:1; font-size:.86rem; font-weight:800;
+        font-variant-numeric:tabular-nums; }
+      .fin-envA-name { display:block; font-size:.82rem; font-weight:650; }
+      .fin-envA-vals { display:block; font-size:.72rem; color:var(--ink-soft);
+        font-variant-numeric:tabular-nums; }
+      .fin-envA-vals.neg { color:var(--negative); }
+      .fin-envA-sub { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+      .fin-envA-subhead { display:flex; align-items:center; gap:8px; font-weight:650;
+        font-size:.9rem; margin-bottom:4px; }
+      .fin-envA-pin { font-size:.58rem; font-weight:700; color:var(--primary);
+        background:var(--accent-soft); border-radius:4px; padding:1px 5px; margin-left:5px;
+        vertical-align:middle; text-transform:uppercase; letter-spacing:.03em; }
+      .fin-env-fixedrow { display:flex; gap:8px; align-items:center; margin-top:8px; }
+      .fin-env-fixedval { flex:1; text-align:left; background:var(--surface-2); border:1px solid var(--line);
+        border-radius:var(--radius-sm); padding:9px 12px; font:inherit; font-weight:650;
+        color:var(--ink); cursor:pointer; min-height:var(--tap); }
+      .fin-env-unpin { border:1px solid var(--line); background:none; color:var(--ink-soft);
+        border-radius:var(--radius-sm); padding:9px 12px; font:inherit; font-size:.82rem;
+        cursor:pointer; min-height:var(--tap); }
+
+      /* ── Tema "Cofre" (private banking noturno) — alternável no ◐ do
+         cabeçalho; o padrão Sage/Creme segue intacto sem a classe.
+         body:has() redeclara os tokens enquanto a tela está montada com o
+         tema ligado (nav e toasts entram junto) e reverte ao navegar. ─── */
+      body:has(.fin-noite) {
+        --bg:#14120f; --surface:#1c1915; --surface-2:#272219;
+        --ink:#eae3d3; --ink-soft:#9a9082; --line:#332d23;
+        --primary:#c6a15b; --primary-ink:#181307; --sage:#c6a15b;
+        --positive:#8fb996; --negative:#d08476;
+        --accent-soft:#2d2617; --warn:#d9b05e; --warn-soft:#33290f;
+        --shadow:0 1px 3px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.35);
+      }
+      body:has(.fin-noite) input:focus, body:has(.fin-noite) textarea:focus,
+      body:has(.fin-noite) select:focus {
+        border-color:var(--primary); box-shadow:0 0 0 3px rgba(198,161,91,.28);
+      }
+      /* assinatura: números tabulares de extrato + saldo em serif editorial */
+      .fin-noite { font-variant-numeric:tabular-nums; }
+      .fin-noite .fin-hero { background:linear-gradient(155deg, #221d14 0%, #1c1915 55%, #191510 100%);
+        border-color:color-mix(in srgb, var(--primary) 32%, var(--line)); }
+      .fin-noite .fin-hero-balance { font-family:ui-serif, 'New York', Georgia, serif;
+        font-weight:600; letter-spacing:0; }
+      .fin-noite .fin-hero-label, .fin-noite .section-title, .fin-noite .fin-collapse-title,
+      .fin-noite .fin-sec-head .fin-sec-title, .fin-noite .fin-inc-extrahead {
+        color:color-mix(in srgb, var(--primary) 55%, var(--ink-soft)); letter-spacing:.1em; }
+      .fin-noite .fin-progress-bar { background:linear-gradient(90deg, #ab8746, #e2c68a); }
+
+      /* ── Tema "Rosé" (claro, paleta Rosé Pine Dawn) — 3º do ciclo ◐.
+         Papel rosado, texto ardósia-lilás, acentos íris/rosa/pinho.
+         Sem serif: o saldo fica na fonte padrão (pedido da Gabriela). ──── */
+      body:has(.fin-rose) {
+        --bg:#faf4ed; --surface:#fffaf3; --surface-2:#f1eae2;
+        --ink:#575279; --ink-soft:#797593; --line:#e2dcd4;
+        --primary:#907aa9; --primary-ink:#fffaf3; --sage:#d7827e;
+        --positive:#286983; --negative:#b4637a;
+        --accent-soft:#ece4f0; --warn:#a4711f; --warn-soft:#f7e7c3;
+        --shadow:0 1px 3px rgba(87,82,121,.08), 0 6px 20px rgba(87,82,121,.07);
+      }
+      body:has(.fin-rose) input:focus, body:has(.fin-rose) textarea:focus,
+      body:has(.fin-rose) select:focus {
+        border-color:var(--primary); box-shadow:0 0 0 3px rgba(144,122,169,.25);
+      }
+      .fin-rose .fin-hero { background:linear-gradient(150deg, #fffaf3 30%, #f7eef5 100%);
+        border-color:color-mix(in srgb, var(--primary) 26%, var(--line)); }
+      .fin-rose .fin-hero-label, .fin-rose .section-title, .fin-rose .fin-collapse-title,
+      .fin-rose .fin-sec-head .fin-sec-title, .fin-rose .fin-inc-extrahead {
+        color:color-mix(in srgb, var(--primary) 60%, var(--ink-soft)); }
+      .fin-rose .fin-progress-bar { background:linear-gradient(90deg, #907aa9, #d7827e); }
     `;
     document.head.appendChild(s);
   }
@@ -394,6 +461,17 @@
   };
   const thisMonth = () => todayISO().slice(0, 7);
 
+  // Tema da tela (persistido por aparelho), ciclado no ◐ do cabeçalho:
+  // '' = Sage (claro, padrão) | 'noite' = Cofre (noturno) | 'rose' = Rosé (claro).
+  const FIN_THEME_KEY = 'bisa_fin_theme';
+  const FIN_THEMES = [
+    { id: '', name: 'Sage (claro)' },
+    { id: 'noite', name: 'Cofre (noturno)' },
+    { id: 'rose', name: 'Rosé (claro)' },
+  ];
+  const finTheme = () => { try { return localStorage.getItem(FIN_THEME_KEY) || ''; } catch { return ''; } };
+  const setFinTheme = (v) => { try { localStorage.setItem(FIN_THEME_KEY, v); } catch {} };
+
   // Smart defaults: lembra o último tipo/categoria usados no lançamento avulso.
   const LAST_KEY = 'bisa_fin_last';
   const loadLast = () => { try { return JSON.parse(localStorage.getItem(LAST_KEY)) || {}; } catch { return {}; } };
@@ -418,13 +496,65 @@
       ev.preventDefault();
       // Se fn() remover o overlay, o `click` que vem depois cairia no elemento
       // que estava embaixo (ex.: a linha do objetivo → reabriria o editor).
-      // Engole o próximo click (fase de captura) p/ evitar esse "click-through".
-      const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
-      document.addEventListener('click', swallow, { capture: true, once: true });
+      // Engole só o click-fantasma DESTE toque (mesmas coordenadas ±12px);
+      // um toque real em outro controle logo depois passa normalmente.
+      const { clientX: x, clientY: y } = ev;
+      const swallow = (e) => {
+        if (Math.abs(e.clientX - x) > 12 || Math.abs(e.clientY - y) > 12) return;
+        e.stopPropagation(); e.preventDefault();
+        document.removeEventListener('click', swallow, { capture: true });
+      };
+      document.addEventListener('click', swallow, { capture: true });
       setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), 700);
       fn(ev);
     });
     btn.style.touchAction = 'manipulation';
+  };
+
+  // Exclusão em 2 toques (sem confirm() nativo — melhor no iPad): o 1º toque
+  // arma o botão por 3s com o texto de confirmação; o 2º executa onConfirm.
+  // tap=true registra via onTap (p/ editores com teclado nativo aberto).
+  const armDelete = (btn, onConfirm, { label = '✕', armedLabel = 'Excluir?', tap = false } = {}) => {
+    let armed = false, timer = null;
+    const handler = () => {
+      if (!armed) {
+        armed = true; btn.classList.add('confirm'); btn.textContent = armedLabel;
+        timer = setTimeout(() => { armed = false; btn.classList.remove('confirm'); btn.textContent = label; }, 3000);
+        return;
+      }
+      clearTimeout(timer);
+      onConfirm();
+    };
+    if (tap) onTap(btn, handler); else btn.onclick = handler;
+  };
+
+  // "1.234,56" → 1234.56 (aceita vírgula ou ponto decimal; ignora ruído).
+  const parseDec = (s) => {
+    const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, ''));
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // Sanitiza um input de valor pt-BR ao digitar: só dígitos e uma vírgula.
+  const decimalInput = (inp, onInput) => {
+    inp.oninput = () => {
+      let v = inp.value.replace(/[^0-9,]/g, '');
+      const i = v.indexOf(',');
+      if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, '');
+      inp.value = v;
+      if (onInput) onInput();
+    };
+  };
+
+  // Campo numérico pt-BR (label + input decimal) anexado a um modal de editor.
+  const numField = (modal, labelText, val, ph, onInput) => {
+    const f = elt('div', 'fin-item-field');
+    f.appendChild(elt('label', 'fin-item-flabel', labelText));
+    const inp = elt('input', 'fin-item-inp');
+    inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = ph || '';
+    if (val != null) inp.value = String(val).replace('.', ',');
+    decimalInput(inp, onInput);
+    f.appendChild(inp); modal.appendChild(f);
+    return inp;
   };
 
   // Envelopes AUVP — categorias, rótulos, cores e o que cada uma engloba.
@@ -455,10 +585,7 @@
     _sheetOpen: false,
     _incomeCollapsed: false, // seção "Renda" recolhida?
     _expandedCats: new Set(), // categorias de despesa com os lançamentos abertos
-    _reorderMode: false, // "Controle do mês" em modo de reordenação?
-    _sortMode: 'manual', // ordenação rápida da vista: manual|due|unpaid|spend (temporária; não persiste)
-    _sortables: [], // instâncias SortableJS ativas (modo ordenar)
-    _incomeCatsOrder: [], // ordem das categorias de renda, preservada ao salvar a ordem
+    _envView: 'used', // visualização do Controle do mês: 'used' (gasto) | 'free' (disponível)
     _allocEdit: false, // editor de % das metas (envelopes) aberto?
     _expandedBuckets: new Set(), // envelopes com os lançamentos abertos
     _billSort: 'unpaid', // ordenação do quadro de contas: unpaid|due|amount|bucket
@@ -474,13 +601,68 @@
       this._closeAmountSheet();
       this._closeSortMenu();
       this._closeItemEditor();
-      this._destroySortables();
       this._el = null;
     },
 
-    _destroySortables() {
-      this._sortables.forEach((s) => { try { s.destroy(); } catch {} });
-      this._sortables = [];
+    // Lançar por voz: fala → POST /finance/voz (Haiku extrai valor/categoria/
+    // envelope AUVP) → resumo na tela → confirmar → POST /finance/tx (contrato
+    // existente). O ditado reusa o motor BISO_DITADO (Whisper local).
+    _openVoiceTx() {
+      if (document.querySelector('.fin-voz-ov')) return;
+      const ov = elt('div', 'fin-voz-ov');
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;display:flex;align-items:center;justify-content:center;padding:20px;';
+      const card = elt('div', 'card');
+      card.style.cssText = 'width:min(92vw,480px);padding:16px;display:flex;flex-direction:column;gap:10px;';
+      card.innerHTML = `
+        <div class="section-title" style="margin:0">🎤 Lançar por voz</div>
+        <div class="fin-voz-box" contenteditable="true"
+          style="min-height:76px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:1rem;"></div>
+        <div class="fin-voz-sum muted" style="font-size:.9rem;min-height:1.2em;">Ex.: “mercado sessenta e dois reais” · “recebi 300 do freela”</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn ghost fin-voz-cancel" style="flex:1;min-height:46px;">Cancelar</button>
+          <button class="btn ghost fin-voz-mic" style="flex:1;min-height:46px;">🎤 Ditar</button>
+          <button class="btn fin-voz-go" style="flex:1.4;min-height:46px;">Analisar</button>
+        </div>`;
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      const box = card.querySelector('.fin-voz-box'), sum = card.querySelector('.fin-voz-sum');
+      const go = card.querySelector('.fin-voz-go'), micB = card.querySelector('.fin-voz-mic');
+      let parsed = null;
+      const close = () => {
+        if (window.BISO_DITADO && window.BISO_DITADO.activeBtn() === micB) window.BISO_DITADO.stopAll();
+        ov.remove();
+      };
+      ov.onclick = (e) => { if (e.target === ov) close(); };
+      card.querySelector('.fin-voz-cancel').onclick = close;
+      if (window.BISO_DITADO) window.BISO_DITADO.bind(micB, () => box);
+      else micB.style.display = 'none';
+      box.addEventListener('input', () => { parsed = null; go.textContent = 'Analisar'; });
+      go.onclick = async () => {
+        const texto = box.innerText.trim();
+        if (!texto) { box.focus(); return; }
+        if (!parsed) {                       // passo 1: parse + resumo
+          go.disabled = true; go.textContent = '…';
+          try {
+            const r = await BISA.api('/finance/voz', { method: 'POST', json: { texto } });
+            parsed = r.parsed;
+            sum.textContent = '→ ' + [
+              'R$ ' + Number(parsed.amount).toFixed(2).replace('.', ','),
+              parsed.kind === 'income' ? 'receita' : (parsed.bucket || 'gasto'),
+              parsed.category, parsed.desc, parsed.date,
+              parsed.pending ? 'provisionado' : '',
+            ].filter(Boolean).join(' · ');
+            go.textContent = '✓ Confirmar';
+          } catch (e) { sum.textContent = '⚠ ' + e.message; go.textContent = 'Analisar'; }
+          go.disabled = false;
+          return;
+        }
+        go.disabled = true;                  // passo 2: cria a transação
+        try {
+          await BISA.api('/finance/tx', { method: 'POST', json: parsed });
+          BISA.toast('Lançado ' + sum.textContent.slice(2));
+          close(); this._render(true);
+        } catch (e) { sum.textContent = '⚠ ' + e.message; go.disabled = false; }
+      };
     },
 
     // preserveScroll=true mantém a posição de scroll (re-render após editar/pagar/
@@ -491,6 +673,8 @@
       const scroller = el.parentNode; // #screen (overflow-y:auto)
       const savedTop = preserveScroll && scroller ? scroller.scrollTop : 0;
       el.innerHTML = '';
+      el.classList.toggle('fin-noite', finTheme() === 'noite');
+      el.classList.toggle('fin-rose', finTheme() === 'rose');
 
       // Modo "Gerenciar custos" — board próprio, fora da grade do mês.
       if (this._manageMode) {
@@ -527,7 +711,18 @@
       nextBtn.setAttribute('aria-label', 'Próximo mês');
       nextBtn.onclick = () => { this._month = nextMonth(this._month); this._render(); };
       const mlabel = elt('span', 'fin-month-label', monthLabel(this._month));
-      monthNav.append(prevBtn, mlabel, nextBtn);
+      const themeBtn = elt('button', 'fin-month-btn', '◐');
+      themeBtn.setAttribute('aria-label', 'Tema da tela');
+      themeBtn.onclick = () => {
+        const ids = FIN_THEMES.map((t) => t.id);
+        const next = ids[(ids.indexOf(finTheme()) + 1) % ids.length];
+        setFinTheme(next); this._render(true);
+        BISA.toast('Tema: ' + FIN_THEMES.find((t) => t.id === next).name);
+      };
+      const vozBtn = elt('button', 'fin-month-btn', '🎤');
+      vozBtn.setAttribute('aria-label', 'Lançar por voz');
+      vozBtn.onclick = () => this._openVoiceTx();
+      monthNav.append(prevBtn, mlabel, nextBtn, vozBtn, themeBtn);
       el.appendChild(monthNav);
 
       // Grade de duas colunas (iPad) / coluna única (celular).
@@ -541,8 +736,10 @@
       const heroWrap = elt('div');
       const incomeWrap = elt('div');
       const billsWrap = elt('div');
+      const provWrap = elt('div');
+      const prazerWrap = elt('div');
       const investCard = elt('div'); // escondido até haver posições
-      colMain.append(heroWrap, incomeWrap, billsWrap, investCard);
+      colMain.append(heroWrap, incomeWrap, billsWrap, provWrap, prazerWrap, investCard);
 
       // Coluna direita: controle do mês, lançamentos, objetivos.
       const budgetWrap = elt('div');
@@ -560,6 +757,8 @@
         this._objectives = (profileResp && profileResp.profile && profileResp.profile.objectives) || [];
         this._fillHero(heroWrap, summary);
         this._fillBills(billsWrap, profileResp, summary);
+        this._fillProvisions(provWrap, profileResp, summary);
+        this._fillProvisions(prazerWrap, profileResp, summary, 'prazeres', 'Prazeres do mês');
         this._fillIncome(incomeWrap, profileResp, summary);
         this._fillEnvelope(budgetWrap, profileResp, summary);
         this._fillTx(txWrap, summary, profileResp, month);
@@ -584,15 +783,23 @@
       // informativo, fora do saldo e do gráfico.
       const manual = (cash.manual) || [];
       const r2 = (n) => Math.round(n * 100) / 100;
+      // pendentes ficam fora: o backend já os exclui de income/expense, então os
+      // ajustes de liberdade abaixo também só contam o que foi efetivado.
       const libAporte = r2(manual
-        .filter((t) => t.kind === 'expense' && t.bucket === 'liberdade')
+        .filter((t) => t.kind === 'expense' && t.bucket === 'liberdade' && !t.pending)
         .reduce((s, t) => s + t.amount, 0));
       const libIncome = r2(manual
-        .filter((t) => t.kind === 'income' && t.category && t.category.endsWith('-lib'))
+        .filter((t) => t.kind === 'income' && t.category && t.category.endsWith('-lib') && !t.pending)
         .reduce((s, t) => s + t.amount, 0));
       const receitas = r2(income - libIncome);
       const gastos = r2(expense - libAporte);
-      const saldo = r2(receitas - gastos); // o que sobra para viver
+      const saldo = r2(receitas - gastos); // o que sobra para viver (só o que já entrou — caixa)
+      // renda lançada mas ainda não paga — fora do saldo até ser confirmada.
+      // Como nas receitas, a renda de liberdade (-lib) fica de fora: ela não
+      // entra no caixa em R$ nem quando efetivada.
+      const pendente = r2(manual
+        .filter((t) => t.kind === 'income' && t.pending && !(t.category && t.category.endsWith('-lib')))
+        .reduce((s, t) => s + t.amount, 0));
 
       const hero = elt('div', 'fin-hero');
       hero.appendChild(elt('div', 'fin-hero-label', `Saldo de ${monthLabel(this._month).split(' de ')[0]}`));
@@ -621,7 +828,8 @@
         return sub;
       };
       subs.append(mkSub('in', 'Receitas', brl(receitas)), mkSub('out', 'Gastos', brl(gastos)));
-      if (libAporte > 0) subs.append(mkSub('', 'Liberdade', brl(libAporte), BUCKETS[2].color));
+      if (pendente > 0) subs.append(mkSub('pend', 'A receber', brl(pendente)));
+      if (libAporte > 0) subs.append(mkSub('', 'Investido', brl(libAporte), BUCKETS[2].color));
       hero.appendChild(subs);
       wrap.appendChild(hero);
 
@@ -631,27 +839,6 @@
         hint.textContent = 'Sem movimento neste mês. Use o controle e os lançamentos ao lado.';
         wrap.appendChild(hint);
       }
-    },
-
-    // ── Categorias (gastos do mês) ───────────────────────────────────────
-    _fillCategories(wrap, summary) {
-      wrap.innerHTML = '';
-      const cats = Object.entries((summary && summary.cash && summary.cash.byCategory) || {});
-      if (cats.length === 0) return;
-
-      wrap.appendChild(elt('p', 'section-title', 'Gastos por categoria'));
-      const card = elt('div', 'card');
-      const maxVal = Math.max(...cats.map(([, v]) => v), 1);
-      cats.sort((a, b) => b[1] - a[1]).slice(0, 6).forEach(([cat, val]) => {
-        const row = elt('div', 'fin-cat-row');
-        const bar = elt('div', 'fin-cat-bar');
-        bar.style.width = `${Math.min(100, (val / maxVal) * 100).toFixed(1)}%`;
-        const barWrap = elt('div', 'fin-cat-bar-wrap');
-        barWrap.appendChild(bar);
-        row.append(elt('span', 'fin-cat-name', cat), barWrap, elt('span', 'fin-cat-amt', brl(val)));
-        card.appendChild(row);
-      });
-      wrap.appendChild(card);
     },
 
     // ── Lançamentos do mês (com sheet de avulso) ─────────────────────────
@@ -694,37 +881,26 @@
         const row = elt('div', 'fin-tx-row');
         const amtEl = elt('span', 'fin-tx-amt');
         const isExpense = tx.kind === 'expense';
-        amtEl.style.color = isExpense ? 'var(--negative)' : 'var(--positive)';
+        amtEl.style.color = tx.pending ? 'var(--warn)' : (isExpense ? 'var(--negative)' : 'var(--positive)');
         amtEl.textContent = (isExpense ? '−' : '+') + brl(tx.amount);
 
         const delBtn = elt('button', 'fin-tx-del', '✕');
         delBtn.title = 'Apagar lançamento';
-        // Delete em dois toques (sem confirm() nativo, melhor no iPad).
-        let armed = false, timer = null;
-        delBtn.onclick = async () => {
-          if (!armed) {
-            armed = true;
-            delBtn.classList.add('confirm');
-            delBtn.textContent = 'Apagar?';
-            timer = setTimeout(() => {
-              armed = false; delBtn.classList.remove('confirm'); delBtn.textContent = '✕';
-            }, 3000);
-            return;
-          }
-          clearTimeout(timer);
+        armDelete(delBtn, async () => {
           try {
-            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}`, { method: 'DELETE' });
+            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}&creditGoal=1`, { method: 'DELETE' });
             BISA.toast('Lançamento apagado');
             this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao apagar'); }
-        };
+        }, { armedLabel: 'Apagar?' });
 
         row.append(
           elt('span', 'fin-tx-date', fmtDate(tx.date)),
           elt('span', 'fin-tx-desc', tx.desc || '—'),
           elt('span', 'fin-tx-cat', tx.category || 'outro'),
-          amtEl, delBtn,
         );
+        if (tx.pending) row.appendChild(elt('span', 'fin-inc-sub pend', tx.kind === 'expense' ? 'provisionado' : 'a receber'));
+        row.append(amtEl, delBtn);
         card.appendChild(row);
       });
       wrap.appendChild(card);
@@ -832,87 +1008,6 @@
         : (b.amountUSD != null && fx ? Number(b.amountUSD) * fx : 0)) || 0;
     },
 
-    // Renderiza uma linha do orçamento (status, label+vencimento, realizado/plano,
-    // controle de pagamento, barra) em `parent`. Reaproveitado por Renda e Despesas.
-    // ctx: { fx, doneMap, isThisMonth, todayDay }. Retorna { plan, done }.
-    _budgetLine(parent, b, ctx) {
-      const income = b.kind === 'income';
-      const plan = this._planBRL(b, ctx.fx);
-      const done = Number(ctx.doneMap[b.category] || 0);
-      let status = 'pending';
-      if (done > 0) status = (!income && done > plan + 0.005) ? 'over' : 'ok';
-      const overdue = ctx.isThisMonth && status === 'pending' && b.dueDay && ctx.todayDay > b.dueDay;
-      const soon = ctx.isThisMonth && status === 'pending' && b.dueDay && !overdue && (b.dueDay - ctx.todayDay <= 5);
-
-      const expanded = !income && this._expandedCats.has(b.category);
-
-      const line = elt('div', 'fin-bud-line');
-      const row = elt('div', 'fin-bud-row');
-
-      const paid = done > 0; // pago/recebido: rabisca o dia e ganha o badge verde
-      const label = elt('span', 'fin-bud-label', b.label || b.category || '—');
-      if (b.dueDay) {
-        const due = elt('span', 'fin-bud-due' + (paid ? ' paid' : overdue ? ' overdue' : soon ? ' soon' : ''));
-        due.textContent = overdue ? `venceu dia ${b.dueDay}` : `dia ${b.dueDay}`;
-        label.append(' ', due);
-      }
-      if (paid) label.append(' ', elt('span', 'fin-bud-paid', income ? 'recebido' : 'pago'));
-      if (!income) {
-        // Despesa: tocar no nome expande os lançamentos da categoria (editar/excluir).
-        // Abre/fecha localmente (sem re-render) p/ não perder a posição de scroll.
-        label.style.cursor = 'pointer';
-        const caret = elt('span', 'fin-bud-caret', expanded ? '▾' : '▸');
-        label.prepend(caret);
-        label.onclick = () => {
-          if (this._expandedCats.has(b.category)) {
-            this._expandedCats.delete(b.category);
-            const sub = line.querySelector('.fin-bud-sublist');
-            if (sub) sub.remove();
-            caret.textContent = '▸';
-          } else {
-            this._expandedCats.add(b.category);
-            this._renderTxSublist(line, b);
-            caret.textContent = '▾';
-          }
-        };
-      }
-
-      const action = elt('span', 'fin-bud-action');
-      if (ctx.isThisMonth) this._renderPayControl(action, b, plan, done, income);
-      row.append(elt('span', `fin-bud-status st-${overdue ? 'over' : status}`), label);
-      line.appendChild(row);
-
-      // Barra grossa: o gasto preenche a barra e os números (gasto / plano)
-      // ficam sobre ela; a ação (Pagar/Receber) vai à direita, na mesma linha.
-      // O plano segue editável (toque abre o teclado).
-      const noCur = (v) => brl(v).replace(/^R\$\s?/, ''); // plano sem "R$" p/ não repetir
-      const ratio = plan > 0 ? Math.min(1, done / plan) : (done > 0 ? 1 : 0);
-
-      const fill = elt('div', 'fin-bud-bar2fill');
-      fill.style.width = `${(ratio * 100).toFixed(0)}%`;
-      fill.style.background = (overdue || status === 'over') ? 'rgba(176,88,79,.32)'
-        : status === 'ok' ? 'rgba(91,138,114,.32)' : 'transparent';
-
-      const doneEl = elt('strong', status === 'over' ? 'fin-value-neg' : null, done > 0 ? brl(done) : '—');
-      const planEl = elt('button', 'fin-bud-bar2plan', noCur(plan));
-      planEl.title = 'Editar valor planejado';
-      planEl.onclick = () => this._editPlan(planEl, b, plan);
-      const nums = elt('div', 'fin-bud-bar2nums');
-      nums.append(doneEl, elt('span', 'muted', '/'), planEl);
-
-      const track = elt('div', 'fin-bud-bar2track');
-      track.append(fill, nums);
-
-      const bar2 = elt('div', 'fin-bud-bar2');
-      bar2.append(track, action);
-      line.appendChild(bar2);
-
-      if (expanded) this._renderTxSublist(line, b);
-
-      parent.appendChild(line);
-      return { plan, done };
-    },
-
     // Lista de lançamentos de uma despesa (categoria) no mês exibido, com editar
     // (abre o teclado p/ novo valor) e excluir (2 toques). Usa this._summary.
     _renderTxSublist(line, b) {
@@ -932,30 +1027,26 @@
         const act = elt('span', 'fin-bud-subact');
 
         const edit = elt('button', 'fin-bud-subbtn', '✎');
-        edit.title = 'Editar valor';
+        edit.title = 'Editar lançamento';
         edit.onclick = () => this._openAmountSheet({
-          title: tx.desc || b.label || b.category || 'Valor',
+          title: b.label || b.category || 'Valor',
           initial: tx.amount,
+          withDesc: true, descFocus: false,
+          descInitial: tx.desc || '',
+          descPlaceholder: 'Observação (opcional)',
           confirmLabel: 'Salvar',
-          onConfirm: (amount) => this._editTx(tx, amount),
+          onConfirm: (amount, note) => this._editTx(tx, amount, note),
         });
 
         const del = elt('button', 'fin-bud-subbtn del', '✕');
         del.title = 'Excluir lançamento';
-        let armed = false, timer = null;
-        del.onclick = async () => {
-          if (!armed) {
-            armed = true; del.classList.add('confirm'); del.textContent = 'Excluir?';
-            timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = '✕'; }, 3000);
-            return;
-          }
-          clearTimeout(timer);
+        armDelete(del, async () => {
           try {
-            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}`, { method: 'DELETE' });
+            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}&creditGoal=1`, { method: 'DELETE' });
             BISA.toast('Lançamento excluído');
             this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao excluir'); }
-        };
+        });
 
         act.append(edit, del);
         srow.append(
@@ -969,17 +1060,13 @@
       line.appendChild(sub);
     },
 
-    // Edita um lançamento (só o valor): apaga e recria com o mesmo dado e o novo
-    // valor (o backend só tem POST/DELETE de tx, sem PATCH).
-    async _editTx(tx, amount) {
+    // Edita um lançamento in-place (PATCH — 1 request, sem risco de sumir com
+    // o dado no meio de um apaga-e-recria).
+    async _editTx(tx, amount, note) {
       try {
-        await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}`, { method: 'DELETE' });
         await BISA.api('/finance/tx', {
-          method: 'POST',
-          json: {
-            kind: tx.kind, amount, desc: tx.desc, category: tx.category, date: tx.date,
-            ...(tx.bucket ? { bucket: tx.bucket } : {}),
-          },
+          method: 'PATCH',
+          json: { id: tx.id, amount, desc: note != null ? note : tx.desc, pending: !!tx.pending },
         });
         BISA.toast('Lançamento atualizado!');
         this._render(true);
@@ -1004,10 +1091,15 @@
       const salaryLibCats = new Set(fixed.filter((b) => b.salaryUSD).map((b) => `${b.category}-lib`));
       const doneMap = (summary && summary.cash && summary.cash.incomeByCategory) || {};
       const manual = (summary && summary.cash && summary.cash.manual) || [];
+      // receitas "a receber" por categoria (fontes fixas mostram o estado pendente)
+      const pendMap = {};
+      manual.filter((t) => t.kind === 'income' && t.pending)
+        .forEach((t) => { pendMap[t.category] = t; });
       const extras = manual
         .filter((t) => t.kind === 'income' && !fixedCats.has(t.category) && !salaryLibCats.has(t.category))
         .sort((a, c) => (a.date < c.date ? 1 : -1));
       const receivedTotal = (summary && summary.cash && summary.cash.income) || 0;
+      const pendingTotal = (summary && summary.cash && summary.cash.pendingIncome) || 0;
       const collapsed = this._incomeCollapsed;
 
       // Cabeçalho clicável: alterna recolhido/expandido. Só o total recebido —
@@ -1018,7 +1110,8 @@
         elt('span', 'fin-collapse-title', 'Renda'),
       );
       const tot = elt('span', 'fin-collapse-vals');
-      tot.innerHTML = `<strong class="fin-value-pos">${brl(receivedTotal)}</strong> <span class="muted">recebido</span>`;
+      tot.innerHTML = `<strong class="fin-value-pos">${brl(receivedTotal)}</strong> <span class="muted">recebido</span>`
+        + (pendingTotal > 0 ? ` · <strong>${brl(pendingTotal)}</strong> <span class="muted">a receber</span>` : '');
       head.appendChild(tot);
       head.onclick = () => { this._incomeCollapsed = !this._incomeCollapsed; this._render(true); };
       wrap.appendChild(head);
@@ -1027,7 +1120,7 @@
       const card = elt('div', 'card');
       fixed.forEach((b) => {
         if (b.salaryUSD) this._incomeSalaryRow(card, b, fx, summary);
-        else this._incomeFixedRow(card, b, Number(doneMap[b.category] || 0), this._planBRL(b, fx));
+        else this._incomeFixedRow(card, b, Number(doneMap[b.category] || 0), this._planBRL(b, fx), pendMap[b.category]);
       });
 
       if (extras.length) {
@@ -1053,7 +1146,8 @@
     // `plan` (o valor típico do orçamento) só alimenta o atalho "Usar" no teclado;
     // não é mostrado como previsão. Fontes em dólar (b.amountUSD) mostram o valor
     // em US$ (editável) e, ao registrar o R$ recebido, a cotação implícita.
-    _incomeFixedRow(parent, b, done, plan) {
+    // `pendTx` = lançamento "a receber" da categoria (valor lançado, não pago).
+    _incomeFixedRow(parent, b, done, plan, pendTx) {
       const usd = (b.amountUSD != null && Number(b.amountUSD) > 0) ? Number(b.amountUSD) : null;
       const name = b.label || b.category || '—';
       const row = elt('div', 'fin-inc-row');
@@ -1081,6 +1175,22 @@
         top.appendChild(edit);
         right.appendChild(top);
         if (usd != null) right.appendChild(elt('span', 'fin-inc-rate', `cotação ${fmtRate(done / usd)} / US$`));
+      } else if (pendTx) {
+        // Valor lançado, ainda não pago: mostra "a receber" + confirmação de entrada.
+        const top = elt('span', 'fin-inc-topline');
+        top.append(
+          elt('span', 'fin-inc-sub pend', 'a receber'),
+          elt('strong', 'fin-inc-amt', brl(pendTx.amount)),
+        );
+        const edit = elt('button', 'fin-bud-pay ghost', '✎');
+        edit.title = 'Corrigir valor a receber';
+        edit.onclick = () => this._openReceive(b, pendTx.amount, plan, usd, true);
+        top.appendChild(edit);
+        right.appendChild(top);
+        const got = elt('button', 'fin-bud-pay', 'Entrou');
+        got.title = 'Confirmar que o valor caiu na conta';
+        got.onclick = () => this._confirmReceived(pendTx);
+        right.appendChild(got);
       } else {
         const reg = elt('button', 'fin-bud-pay', 'Registrar');
         reg.title = 'Registrar o valor que entrou';
@@ -1091,15 +1201,30 @@
       parent.appendChild(row);
     },
 
+    // Confirma que uma receita "a receber" caiu na conta: remove o flag e data
+    // de hoje (o dia em que o dinheiro entrou de fato no caixa).
+    async _confirmReceived(tx) {
+      try {
+        await BISA.api('/finance/tx', {
+          method: 'PATCH',
+          json: { id: tx.id, pending: false, date: todayISO() },
+        });
+        BISA.toast('Recebido!');
+        this._render(true);
+      } catch (e) { BISA.toast(e.message || 'Erro ao confirmar'); }
+    },
+
     // Sheet para registrar/corrigir o R$ recebido de uma fonte fixa. Quando a
     // fonte é em dólar (usd), o sheet mostra a cotação implícita ao vivo.
-    _openReceive(b, initial, plan, usd) {
+    // pendingInitial pré-seleciona "A receber" (corrigir um valor ainda não pago).
+    _openReceive(b, initial, plan, usd, pendingInitial) {
       this._openAmountSheet({
         title: b.label || b.category || 'Valor',
         initial, plan, rateBase: usd || 0,
         allowZero: initial != null,
-        confirmLabel: initial != null ? 'Corrigir recebido' : 'Salvar receita',
-        onConfirm: (amount) => this._setRealized(b, amount, usd),
+        statusToggle: true, pendingInitial,
+        confirmLabel: initial != null ? 'Corrigir valor' : 'Salvar receita',
+        onConfirm: (amount, _desc, _goal, pending) => this._setRealized(b, amount, usd, pending),
       });
     },
 
@@ -1131,6 +1256,9 @@
       const libCat = `${b.category}-lib`;
       const doneTransfer = Number(doneMap[b.category] || 0);
       const doneLib = Number(doneMap[libCat] || 0);
+      const manual = (summary && summary.cash && summary.cash.manual) || [];
+      const pendTx = manual.find((t) => t.kind === 'income' && t.pending && t.category === b.category);
+      const pendLib = manual.find((t) => t.kind === 'income' && t.pending && t.category === libCat);
 
       const wrap = elt('div', 'fin-sal');
       const hd = elt('div', 'fin-sal-head');
@@ -1153,6 +1281,16 @@
         top.appendChild(e);
         tr.appendChild(top);
         tr.appendChild(elt('span', 'fin-inc-rate', `cotação real ${fmtRate(doneTransfer / transferUSD)} / US$`));
+      } else if (pendTx) {
+        const top = elt('span', 'fin-inc-topline');
+        top.append(elt('span', 'fin-inc-sub pend', 'a receber'), elt('strong', 'fin-inc-amt', brl(pendTx.amount)));
+        const e = elt('button', 'fin-bud-pay ghost', '✎');
+        e.title = 'Corrigir valor a receber'; e.onclick = () => this._openReceive(b, pendTx.amount, transferUSD * std, transferUSD, true);
+        top.appendChild(e);
+        tr.appendChild(top);
+        const got = elt('button', 'fin-bud-pay', 'Entrou');
+        got.title = 'Confirmar que o R$ caiu na conta'; got.onclick = () => this._confirmReceived(pendTx);
+        tr.appendChild(got);
       } else {
         const reg = elt('button', 'fin-bud-pay', 'Registrar');
         reg.title = 'Registrar o R$ que caiu na conta'; reg.onclick = () => this._openReceive(b, null, transferUSD * std, transferUSD);
@@ -1166,14 +1304,27 @@
       const lr = elt('span', 'fin-inc-got');
       if (doneLib > 0) {
         const top = elt('span', 'fin-inc-topline');
-        top.append(elt('span', 'fin-inc-sub', 'destinado'), elt('strong', 'fin-inc-amt fin-value-pos', brl(doneLib)));
+        top.append(elt('span', 'fin-inc-sub', 'investido'), elt('strong', 'fin-inc-amt fin-value-pos', brl(doneLib)));
         const un = elt('button', 'fin-bud-pay ghost', '✕');
-        un.title = 'Desfazer destinação'; un.onclick = () => this._undoLiberdade(b);
+        un.title = 'Desfazer investimento'; un.onclick = () => this._undoLiberdade(b);
         top.appendChild(un);
         lr.appendChild(top);
+      } else if (pendLib) {
+        // Aporte provisionado: reservado, aguardando o dinheiro entrar.
+        const top = elt('span', 'fin-inc-topline');
+        top.append(elt('span', 'fin-inc-sub pend', 'provisionado'), elt('strong', 'fin-inc-amt', brl(pendLib.amount)));
+        const un = elt('button', 'fin-bud-pay ghost', '✕');
+        un.title = 'Desfazer provisão'; un.onclick = () => this._undoLiberdade(b);
+        top.appendChild(un);
+        lr.appendChild(top);
+        const got = elt('button', 'fin-bud-pay', 'Entrou');
+        got.title = 'Confirmar: o dinheiro entrou e o aporte foi feito';
+        got.onclick = () => this._confirmLiberdade(b);
+        lr.appendChild(got);
       } else {
-        const dest = elt('button', 'fin-bud-pay', 'Destinar à liberdade');
-        dest.onclick = () => this._destinarLiberdade(b, libBRL);
+        // Se a transferência ainda está "a receber", a provisão é o default.
+        const dest = elt('button', 'fin-bud-pay', 'Investir');
+        dest.onclick = () => this._destinarLiberdade(b, libBRL, !!pendTx);
         lr.appendChild(dest);
       }
       l.appendChild(lr); wrap.appendChild(l);
@@ -1183,46 +1334,57 @@
 
     // Atalho: lança o valor retido em dólar como RENDA (renda do mês completa) e
     // como APORTE no envelope Liberdade financeira (aparece no controle do mês).
-    _destinarLiberdade(b, defaultBRL) {
+    // Com "Provisionado", os dois lançamentos nascem pendentes: o aporte já fica
+    // reservado, mas só conta (caixa, envelope, objetivo) quando o dinheiro entrar.
+    _destinarLiberdade(b, defaultBRL, pendingDefault) {
       const libCat = `${b.category}-lib`;
       const objs = (this._objectives || []).filter((o) => o.bucket === 'liberdade');
       this._openAmountSheet({
         title: `Liberdade · ${b.label || ''}`,
         initial: defaultBRL > 0 ? defaultBRL : null, plan: defaultBRL,
         goalChips: objs.map((o) => ({ id: o.id, label: o.label })),
-        confirmLabel: 'Destinar à liberdade',
-        onConfirm: async (amount, _desc, goalId) => {
+        statusToggle: true, pendingInitial: pendingDefault,
+        statusLabels: ['Entrou', 'Provisionar'],
+        confirmLabel: 'Investir',
+        onConfirm: async (amount, _desc, goalId, pending) => {
+          const flag = pending ? { pending: true } : {};
           try {
-            await BISA.api('/finance/tx', { method: 'POST', json: { kind: 'income', amount, desc: `${b.label} — liberdade (US$ retido)`, category: libCat, date: todayISO() } });
-            await BISA.api('/finance/tx', { method: 'POST', json: { kind: 'expense', amount, desc: `Aporte liberdade — ${b.label}`, category: libCat, bucket: 'liberdade', goalId: goalId || undefined, date: todayISO() } });
-            await this._addToObjective(goalId, amount);
-            BISA.toast('Destinado à liberdade!'); this._render(true);
+            await BISA.api('/finance/tx', { method: 'POST', json: { kind: 'income', amount, desc: `${b.label} — liberdade (US$ retido)`, category: libCat, date: todayISO(), ...flag } });
+            // creditGoal: o servidor credita o objetivo junto com o aporte (1 request)
+            await BISA.api('/finance/tx', { method: 'POST', json: { kind: 'expense', amount, desc: `Aporte liberdade — ${b.label}`, category: libCat, bucket: 'liberdade', goalId: goalId || undefined, date: todayISO(), creditGoal: true, ...flag } });
+            BISA.toast(pending ? 'Provisionado — confirme quando entrar' : 'Investido!'); this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao destinar'); }
         },
       });
     },
 
-    // Soma um aporte (em R$) ao saldo do objetivo, convertendo p/ a moeda dele
-    // pela cotação padrão. delta negativo desconta (usado no desfazer).
-    async _addToObjective(goalId, amountBRL) {
-      if (!goalId) return;
-      const obj = (this._objectives || []).find((o) => o.id === goalId);
-      if (!obj) return;
-      const std = this._stdRate || 0;
-      const delta = obj.currency === 'USD' ? (std > 0 ? amountBRL / std : 0) : amountBRL;
-      const next = Math.round((Number(obj.current || 0) + delta) * 100) / 100;
-      await BISA.api('/finance/objectives', { method: 'PATCH', json: { id: goalId, current: Math.max(0, next) } });
+    // Efetiva uma destinação provisionada: remove o flag pending (datando de
+    // hoje); o servidor credita o objetivo vinculado no mesmo request (creditGoal).
+    async _confirmLiberdade(b) {
+      const libCat = `${b.category}-lib`;
+      const manual = (this._summary && this._summary.cash && this._summary.cash.manual) || [];
+      const matches = manual.filter((t) => t.category === libCat && t.pending);
+      try {
+        for (const t of matches) {
+          await BISA.api('/finance/tx', {
+            method: 'PATCH',
+            json: { id: t.id, pending: false, date: todayISO(), creditGoal: true },
+          });
+        }
+        BISA.toast('Investimento efetivado!');
+        this._render(true);
+      } catch (e) { BISA.toast(e.message || 'Erro ao confirmar'); }
     },
 
-    // Desfaz a destinação: remove renda + aporte do mês e desconta o objetivo vinculado.
+    // Desfaz a destinação: remove renda + aporte do mês; creditGoal=1 faz o
+    // servidor descontar do objetivo o aporte efetivado que está sendo removido.
     async _undoLiberdade(b) {
       const libCat = `${b.category}-lib`;
       const manual = (this._summary && this._summary.cash && this._summary.cash.manual) || [];
       const matches = manual.filter((t) => t.category === libCat);
       try {
         for (const t of matches) {
-          if (t.kind === 'expense' && t.goalId) await this._addToObjective(t.goalId, -t.amount);
-          await BISA.api(`/finance/tx?id=${encodeURIComponent(t.id)}`, { method: 'DELETE' });
+          await BISA.api(`/finance/tx?id=${encodeURIComponent(t.id)}&creditGoal=1`, { method: 'DELETE' });
         }
         BISA.toast('Destinação desfeita'); this._render(true);
       } catch (e) { BISA.toast(e.message || 'Erro ao desfazer'); }
@@ -1237,33 +1399,17 @@
       overlay.appendChild(modal);
       modal.appendChild(elt('div', 'fin-amount-title', `Salário · ${b.label || ''}`));
 
-      const numField = (labelText, val, ph) => {
-        const f = elt('div', 'fin-item-field');
-        f.appendChild(elt('label', 'fin-item-flabel', labelText));
-        const inp = elt('input', 'fin-item-inp');
-        inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = ph || '';
-        if (val != null) inp.value = String(val).replace('.', ',');
-        inp.oninput = () => {
-          let v = inp.value.replace(/[^0-9,]/g, '');
-          const i = v.indexOf(','); if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, '');
-          inp.value = v;
-        };
-        f.appendChild(inp); modal.appendChild(f);
-        return inp;
-      };
-      const parseNum = (s) => { const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
-
-      const salInp = numField('Salário completo (US$)', b.salaryUSD, 'Ex: 5000');
-      const transfInp = numField('Transfere para reais (US$)', b.amountUSD, 'Ex: 1500');
-      const rateInp = numField('Cotação padrão (R$/US$)', (this._stdRate || ''), 'Ex: 5,00');
+      const salInp = numField(modal, 'Salário completo (US$)', b.salaryUSD, 'Ex: 5000');
+      const transfInp = numField(modal, 'Transfere para reais (US$)', b.amountUSD, 'Ex: 1500');
+      const rateInp = numField(modal, 'Cotação padrão (R$/US$)', (this._stdRate || ''), 'Ex: 5,00');
 
       const actions = elt('div', 'fin-item-actions');
       const cancel = elt('button', 'fin-amount-cancel', 'Cancelar'); onTap(cancel, () => this._closeItemEditor());
       const save = elt('button', 'btn', 'Salvar');
       onTap(save, async () => {
-        const salaryUSD = parseNum(salInp.value);
-        const amountUSD = parseNum(transfInp.value);
-        const rate = parseNum(rateInp.value);
+        const salaryUSD = parseDec(salInp.value);
+        const amountUSD = parseDec(transfInp.value);
+        const rate = parseDec(rateInp.value);
         try {
           await BISA.api('/finance/budget', { method: 'PATCH', json: { category: b.category, salaryUSD, amountUSD } });
           if (rate > 0) await BISA.api('/finance/fx', { method: 'PATCH', json: { rate } });
@@ -1284,56 +1430,61 @@
       const srow = elt('div', 'fin-bud-subrow');
       const act = elt('span', 'fin-bud-subact');
 
+      // Pendente: confirmar em 1 toque que o valor entrou na conta.
+      if (tx.pending) {
+        const got = elt('button', 'fin-bud-subbtn', '✓');
+        got.title = 'Confirmar que entrou na conta';
+        got.onclick = () => this._confirmReceived(tx);
+        act.appendChild(got);
+      }
+
       const edit = elt('button', 'fin-bud-subbtn', '✎');
       edit.title = 'Editar';
       edit.onclick = () => this._openAmountSheet({
         title: tx.desc || 'Receita extra', initial: tx.amount,
         withDesc: true, descInitial: tx.desc,
+        statusToggle: true, pendingInitial: tx.pending,
         confirmLabel: 'Salvar',
-        onConfirm: (amount, desc) => this._editTx({ ...tx, desc: desc || tx.desc }, amount),
+        onConfirm: (amount, desc, _goal, pending) => this._editTx({ ...tx, desc: desc || tx.desc, pending }, amount),
       });
 
       const del = elt('button', 'fin-bud-subbtn del', '✕');
       del.title = 'Excluir';
-      let armed = false, timer = null;
-      del.onclick = async () => {
-        if (!armed) {
-          armed = true; del.classList.add('confirm'); del.textContent = 'Excluir?';
-          timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = '✕'; }, 3000);
-          return;
-        }
-        clearTimeout(timer);
+      armDelete(del, async () => {
         try {
           await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}`, { method: 'DELETE' });
           BISA.toast('Receita excluída');
           this._render(true);
         } catch (e) { BISA.toast(e.message || 'Erro ao excluir'); }
-      };
+      });
 
       act.append(edit, del);
+      srow.append(elt('span', 'fin-bud-subdate', fmtDate(tx.date)), elt('span', 'fin-bud-subdesc', tx.desc || '—'));
+      if (tx.pending) srow.appendChild(elt('span', 'fin-inc-sub pend', 'a receber'));
       srow.append(
-        elt('span', 'fin-bud-subdate', fmtDate(tx.date)),
-        elt('span', 'fin-bud-subdesc', tx.desc || '—'),
-        elt('strong', 'fin-bud-subamt fin-value-pos', brl(tx.amount)),
+        elt('strong', 'fin-bud-subamt' + (tx.pending ? '' : ' fin-value-pos'), brl(tx.amount)),
         act,
       );
       parent.appendChild(srow);
     },
 
-    // Adicionar uma receita extra (bônus, freela, venda...): descrição + valor.
+    // Adicionar uma receita extra (bônus, freela, venda...): descrição + valor +
+    // status (Entrou = já no caixa; A receber = lançada, fora do saldo até confirmar).
     _openExtraIncome() {
       this._openAmountSheet({
         title: 'Nova receita', initial: null, withDesc: true,
         descPlaceholder: 'Descrição (ex: Bônus, Freela)',
         descChips: ['Bônus', 'Freela', 'Venda', '13º', 'Reembolso'],
+        statusToggle: true,
         confirmLabel: 'Salvar receita',
-        onConfirm: async (amount, desc) => {
+        onConfirm: async (amount, desc, _goal, pending) => {
           try {
             await BISA.api('/finance/tx', {
               method: 'POST',
-              json: { kind: 'income', amount, desc: desc || 'Receita extra', category: 'extra', date: todayISO() },
+              json: { kind: 'income', amount, desc: desc || 'Receita extra', category: 'extra', date: todayISO(),
+                ...(pending ? { pending: true } : {}) },
             });
-            BISA.toast('Receita adicionada!');
+            BISA.toast(pending ? 'Receita lançada — a receber' : 'Receita adicionada!');
             this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao salvar'); }
         },
@@ -1356,19 +1507,8 @@
       overlay.appendChild(modal);
       modal.appendChild(elt('div', 'fin-amount-title', 'Trazer do dólar para reais'));
 
-      const parseNum = (s) => { const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
       // refresh é declaração (hoisted) — usada pelos campos abaixo já no closure.
       function refresh() { resgateRefresh(); }
-      const numField = (labelText, val, ph) => {
-        const f = elt('div', 'fin-item-field');
-        f.appendChild(elt('label', 'fin-item-flabel', labelText));
-        const inp = elt('input', 'fin-item-inp');
-        inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = ph || '';
-        if (val != null) inp.value = String(val).replace('.', ',');
-        inp.oninput = () => { let v = inp.value.replace(/[^0-9,]/g, ''); const i = v.indexOf(','); if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, ''); inp.value = v; refresh(); };
-        f.appendChild(inp); modal.appendChild(f);
-        return inp;
-      };
 
       // Fonte (objetivo em US$). Com mais de um, vira chips; sozinho, fica fixo.
       if (usdObjs.length > 1) {
@@ -1387,8 +1527,8 @@
         modal.appendChild(fS);
       }
 
-      const usdInp = numField('Valor em dólar (US$)', null, 'Ex: 200');
-      const rateInp = numField('Cotação do resgate (R$/US$)', std > 0 ? std : null, 'Ex: 5,40');
+      const usdInp = numField(modal, 'Valor em dólar (US$)', null, 'Ex: 200', refresh);
+      const rateInp = numField(modal, 'Cotação do resgate (R$/US$)', std > 0 ? std : null, 'Ex: 5,40', refresh);
       const descInp = (() => {
         const f = elt('div', 'fin-item-field'); f.appendChild(elt('label', 'fin-item-flabel', 'Motivo (opcional)'));
         const inp = elt('input', 'fin-item-inp'); inp.type = 'text'; inp.maxLength = 200; inp.placeholder = 'Ex: Dentista, conserto do carro';
@@ -1397,7 +1537,7 @@
 
       const preview = elt('div', 'fin-amount-preview'); modal.appendChild(preview);
       const resgateRefresh = () => {
-        const usd = parseNum(usdInp.value); const rate = parseNum(rateInp.value);
+        const usd = parseDec(usdInp.value); const rate = parseDec(rateInp.value);
         if (!(usd > 0) || !(rate > 0)) { preview.textContent = ''; return; }
         const brlV = Math.round(usd * rate * 100) / 100;
         let txt = `= ${brl(brlV)}`;
@@ -1411,7 +1551,7 @@
       const cancel = elt('button', 'fin-amount-cancel', 'Cancelar'); onTap(cancel, () => this._closeItemEditor());
       const save = elt('button', 'btn', 'Trazer para reais');
       onTap(save, async () => {
-        const usd = parseNum(usdInp.value); const rate = parseNum(rateInp.value);
+        const usd = parseDec(usdInp.value); const rate = parseDec(rateInp.value);
         if (!(usd > 0)) { BISA.toast('Informe o valor em dólar'); return; }
         if (!(rate > 0)) { BISA.toast('Informe a cotação'); return; }
         const brlV = Math.round(usd * rate * 100) / 100;
@@ -1434,64 +1574,6 @@
       document.body.appendChild(overlay); this._itemOverlay = overlay; usdInp.focus();
     },
 
-    // Popover do "Ordenar", ancorado no botão — ideal p/ Pencil/ponteiro no
-    // iPad: abre coladinho onde tocou, com pouco deslocamento. Opções em duas
-    // linhas com ✓ na ativa + a opção de reordenar manualmente (arrastar),
-    // separada por ser outro fluxo. As ordenações rápidas são vista temporária.
-    _openSortMenu(anchor) {
-      this._closeSortMenu();
-      const scrim = elt('div', 'fin-sort-scrim'); // captura o toque/clique fora
-      const pop = elt('div', 'fin-sort-pop');
-
-      const mkRow = (label, desc, trailing, isOn, onClick) => {
-        const row = elt('button', 'fin-sort-row' + (isOn ? ' on' : ''));
-        const txt = elt('div', 'fin-sort-rtext');
-        txt.append(elt('span', 'fin-sort-rlabel', label), elt('span', 'fin-sort-rdesc', desc));
-        row.append(txt, trailing);
-        row.onclick = onClick;
-        pop.appendChild(row);
-      };
-
-      const pick = (mode) => { this._sortMode = mode; this._closeSortMenu(); this._render(true); };
-      [
-        ['manual', 'Padrão', 'Ordem que você salvou'],
-        ['due', 'Por vencimento', 'Contas que vencem antes primeiro'],
-        ['unpaid', 'Pendentes primeiro', 'O que ainda não foi pago no topo'],
-        ['spend', 'Maior gasto', 'Onde você mais gastou no mês'],
-      ].forEach(([mode, label, desc]) => {
-        const on = this._sortMode === mode;
-        mkRow(label, desc, elt('span', 'fin-sort-rcheck', on ? '✓' : ''), on, () => pick(mode));
-      });
-
-      pop.appendChild(elt('div', 'fin-sort-div'));
-      mkRow('Reordenar manualmente', 'Arraste para definir a ordem',
-        elt('span', 'fin-sort-rchev', '›'), false,
-        () => { this._closeSortMenu(); this._reorderMode = true; this._render(true); });
-
-      scrim.onclick = () => this._closeSortMenu();
-      this._sortKeyHandler = (ev) => { if (ev.key === 'Escape') this._closeSortMenu(); };
-      document.addEventListener('keydown', this._sortKeyHandler);
-
-      document.body.append(scrim, pop);
-      this._sortScrim = scrim;
-      this._sortPop = pop;
-
-      // Posiciona junto ao botão (alinhado à direita; vira p/ cima se não couber
-      // abaixo). Medido após inserir no DOM.
-      const r = anchor.getBoundingClientRect();
-      const gap = 8, margin = 8;
-      let left = Math.max(margin, r.right - pop.offsetWidth);
-      let top = r.bottom + gap;
-      if (top + pop.offsetHeight > window.innerHeight - margin) {
-        top = r.top - gap - pop.offsetHeight;
-        pop.classList.add('from-bottom');
-      }
-      pop.style.left = `${Math.round(left)}px`;
-      pop.style.top = `${Math.round(top)}px`;
-
-      requestAnimationFrame(() => pop.classList.add('open')); // dispara a animação de entrada
-    },
-
     _closeSortMenu() {
       if (this._sortKeyHandler) {
         document.removeEventListener('keydown', this._sortKeyHandler);
@@ -1503,26 +1585,6 @@
       this._sortPop = null;
       pop.classList.remove('open');
       setTimeout(() => pop.remove(), 160); // aguarda a animação de saída
-    },
-
-    // Ordena uma cópia dos itens de um grupo conforme this._sortMode (vista
-    // temporária). 'manual' preserva a ordem salva. Empates e itens sem dado
-    // caem para o fim mantendo a ordem original (sort estável via índice).
-    _sortItems(items, doneBRL) {
-      const mode = this._sortMode;
-      if (mode === 'manual') return items;
-      const keyed = items.map((b, i) => ({ b, i }));
-      const dueOf = (b) => (b.dueDay || 9999); // sem vencimento → fim (finito, evita NaN)
-      const cmp = {
-        // Vencimento: menor dia primeiro; sem vencimento por último.
-        due: (x, y) => (dueOf(x.b) - dueOf(y.b)),
-        // Pendentes: não pagos primeiro; dentro de cada bloco, por vencimento.
-        unpaid: (x, y) => ((doneBRL(x.b) > 0.005) - (doneBRL(y.b) > 0.005))
-          || (dueOf(x.b) - dueOf(y.b)),
-        // Maior gasto: realizado decrescente.
-        spend: (x, y) => (doneBRL(y.b) - doneBRL(x.b)),
-      }[mode];
-      return keyed.sort((x, y) => (cmp(x, y) || (x.i - y.i))).map((k) => k.b);
     },
 
     // ── Contas com vencimento ────────────────────────────────────────────
@@ -1573,6 +1635,87 @@
       wrap.appendChild(card);
     },
 
+    // ── Provisões do mês ─────────────────────────────────────────────────
+    // Itens de um envelope SEM vencimento (ex.: Mercado no custo-fixo,
+    // Restaurante nos prazeres): um valor provisionado no mês contra o qual se
+    // lançam os gastos aos poucos — barra gasto/provisionado e lançamento
+    // incremental ("Lançar" → ＋), com a lista de lançamentos expansível.
+    // Renderizado uma vez por envelope que tem quadro (custo-fixo e prazeres).
+    _fillProvisions(wrap, profileResp, summary, bucketId = 'custo-fixo', title = 'Provisões do mês') {
+      wrap.innerHTML = '';
+      const profile = profileResp && profileResp.profile;
+      if (!profile) return;
+      const fx = (profile.fx && Number(profile.fx.BRLperUSD)) || 0;
+      const lines = (profile.budget || [])
+        .filter((b) => b.kind !== 'income' && !b.dueDay && b.bucket === bucketId);
+      if (!lines.length) return;
+      const doneMap = (summary && summary.cash && summary.cash.byCategory) || {};
+      const isThisMonth = this._month === thisMonth();
+      const color = (BUCKETS.find((x) => x.id === bucketId) || {}).color;
+
+      const head = elt('div', 'fin-sec-head');
+      head.appendChild(elt('span', 'fin-sec-title', title));
+      wrap.appendChild(head);
+
+      const card = elt('div', 'card');
+      lines.forEach((b) => this._provRow(card, b,
+        this._planBRL(b, fx), Number(doneMap[b.category] || 0), isThisMonth, color));
+      wrap.appendChild(card);
+    },
+
+    // Uma linha de provisão (Modelo 4): anel de % + nome + "gasto de provisão ·
+    // restam", com ＋ p/ lançar e a lista de lançamentos expansível (tocar no
+    // meio). Cor do anel: a do envelope → âmbar ≥85% → terracota ao estourar.
+    _provRow(parent, b, plan, done, isThisMonth, color) {
+      const ratio = plan > 0 ? done / plan : (done > 0 ? 1 : 0);
+      const pct = Math.round(ratio * 100);
+      const over = done > plan + 0.005;
+      const near = !over && ratio >= 0.85;
+      const restam = Math.round((plan - done) * 100) / 100;
+      const expanded = this._expandedCats.has(b.category);
+
+      const row = elt('div', 'fin-prov-row');
+
+      const ring = elt('div', 'fin-prov-ring' + (over ? ' over' : near ? ' warn' : ''));
+      // inline vence as classes .warn/.over — só colore o estado normal
+      if (color && !over && !near) ring.style.setProperty('--c', color);
+      ring.style.setProperty('--p', String(Math.min(100, pct)));
+      ring.appendChild(elt('b', null, `${pct}%`));
+      row.appendChild(ring);
+
+      const mid = elt('div', 'fin-prov-mid');
+      const name = elt('div', 'fin-prov-name');
+      name.append(elt('span', 'fin-prov-caret', expanded ? '▾ ' : '▸ '),
+        document.createTextNode(b.label || b.category));
+      mid.appendChild(name);
+      const sub = elt('div', 'fin-prov-sub' + (over ? ' neg' : ''));
+      sub.textContent = over
+        ? `${brl(done)} de ${brl(plan)} · estourou ${brl(-restam)}`
+        : `${brl(done)} de ${brl(plan)} · restam ${brl(restam)}`;
+      mid.appendChild(sub);
+      mid.onclick = () => {
+        if (this._expandedCats.has(b.category)) this._expandedCats.delete(b.category);
+        else this._expandedCats.add(b.category);
+        this._render(true);
+      };
+      row.appendChild(mid);
+
+      if (isThisMonth) {
+        const add = elt('button', 'fin-prov-add', '＋');
+        add.title = 'Lançar gasto';
+        add.onclick = () => this._openPayForm(null, b, plan, done, false);
+        row.appendChild(add);
+      }
+
+      parent.appendChild(row);
+
+      if (expanded) {
+        const holder = elt('div', 'fin-prov-sublist-holder');
+        this._renderTxSublist(holder, b);
+        parent.appendChild(holder);
+      }
+    },
+
     _billRow(parent, e, isThisMonth) {
       const { b, plan, done, paid, overdue, soon } = e;
       const row = elt('div', 'fin-bill-row');
@@ -1599,13 +1742,16 @@
     _payBill(b, plan) {
       this._openAmountSheet({
         title: b.label || b.category || 'Pagar', initial: null, plan,
+        withDesc: true, descFocus: false,
+        descPlaceholder: 'Observação (opcional)',
+        descChips: this._noteChips(b.category, b.label),
         confirmLabel: 'Registrar pagamento',
-        onConfirm: async (amount) => {
+        onConfirm: async (amount, note) => {
           try {
             await BISA.api('/finance/tx', {
               method: 'POST',
               json: {
-                kind: 'expense', amount, desc: b.label || b.category,
+                kind: 'expense', amount, desc: note || b.label || b.category,
                 category: b.category || 'outro', date: todayISO(),
                 ...(b.bucket ? { bucket: b.bucket } : {}),
               },
@@ -1778,12 +1924,7 @@
       const valInp = elt('input', 'fin-item-inp');
       valInp.type = 'text'; valInp.inputMode = 'decimal'; valInp.placeholder = 'Ex: 1200';
       if (item && item.amount != null) valInp.value = String(item.amount).replace('.', ',');
-      valInp.oninput = () => {
-        let v = valInp.value.replace(/[^0-9,]/g, '');
-        const i = v.indexOf(',');
-        if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, '');
-        valInp.value = v;
-      };
+      decimalInput(valInp);
       field('Valor previsto (R$)', valInp);
 
       // Tags: chips selecionáveis, filtradas pela categoria do item (escopo da tag
@@ -1814,33 +1955,22 @@
       const actions = elt('div', 'fin-item-actions');
       if (editing) {
         const del = elt('button', 'fin-item-del', 'Excluir');
-        let armed = false, timer = null;
-        onTap(del, async () => {
-          if (!armed) {
-            armed = true; del.classList.add('confirm'); del.textContent = 'Confirmar exclusão';
-            timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = 'Excluir'; }, 3000);
-            return;
-          }
-          clearTimeout(timer);
+        armDelete(del, async () => {
           try {
             await BISA.api(`/finance/budget?category=${encodeURIComponent(item.category)}`, { method: 'DELETE' });
             BISA.toast('Item excluído'); this._closeItemEditor(); this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao excluir'); }
-        });
+        }, { label: 'Excluir', armedLabel: 'Confirmar exclusão', tap: true });
         actions.appendChild(del);
       }
       const cancel = elt('button', 'fin-amount-cancel', 'Cancelar');
       onTap(cancel, () => this._closeItemEditor());
       const save = elt('button', 'btn', editing ? 'Salvar' : 'Criar item');
-      const parseVal = (s) => {
-        const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, ''));
-        return Number.isFinite(n) ? n : 0;
-      };
       onTap(save, async () => {
         const label = labelInp.value.trim();
         if (!label) { BISA.toast('Informe a descrição'); return; }
         const dueDay = dueInp.value ? Math.min(31, Math.max(1, parseInt(dueInp.value, 10) || 0)) : 0;
-        const payload = { label, bucket, dueDay, amount: parseVal(valInp.value), tags: [...selectedTags] };
+        const payload = { label, bucket, dueDay, amount: parseDec(valInp.value), tags: [...selectedTags] };
         try {
           if (editing) await BISA.api('/finance/budget', { method: 'PATCH', json: { category: item.category, ...payload } });
           else await BISA.api('/finance/budget', { method: 'POST', json: payload });
@@ -1889,20 +2019,13 @@
             elt('span', 'fin-tagrow-scope', t.bucket ? bucketLabel(t.bucket) : 'Todas'),
           );
           const del = elt('button', 'fin-bud-subbtn del', '✕');
-          let armed = false, timer = null;
-          onTap(del, async () => {
-            if (!armed) {
-              armed = true; del.classList.add('confirm'); del.textContent = 'Excluir?';
-              timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = '✕'; }, 3000);
-              return;
-            }
-            clearTimeout(timer);
+          armDelete(del, async () => {
             try {
               await BISA.api(`/finance/tags?name=${encodeURIComponent(t.name)}`, { method: 'DELETE' });
               this._tagDefs = (this._tagDefs || []).filter((x) => x.name !== t.name);
               renderList(); BISA.toast('Tag removida');
             } catch (e) { BISA.toast(e.message || 'Erro ao remover'); }
-          });
+          }, { tap: true });
           row.appendChild(del);
           listWrap.appendChild(row);
         });
@@ -1967,8 +2090,20 @@
       const profile = profileResp && profileResp.profile;
       if (!profile) return;
       const alloc = Object.assign({}, DEFAULT_ALLOCATION, profile.allocation || {});
-      const renda = (summary && summary.cash && summary.cash.income) || 0;
+      const fixed = profile.allocationFixed || {}; // metas fixas em R$ (sobrepõem a %)
       const manual = (summary && summary.cash && summary.cash.manual) || [];
+      // O saldo inicial em caixa entra no saldo disponível (hero) mas NÃO é renda
+      // do mês: não se aloca % de envelope sobre dinheiro que já se tinha. Mesma
+      // lógica da renda de liberdade (categorias -lib), excluída do "saldo p/ viver".
+      const saldoInicial = manual
+        .filter((t) => t.kind === 'income' && t.category === 'saldo-inicial')
+        .reduce((s, t) => s + t.amount, 0);
+      // O controle do mês é a visão de PLANEJAMENTO: a renda inclui o que está
+      // provisionado ("a receber") — é sobre esse total que os envelopes fatiam.
+      // O caixa (hero) continua contando só o que já entrou.
+      const cash = (summary && summary.cash) || {};
+      const pendRenda = Number(cash.pendingIncome) || 0;
+      const renda = (Number(cash.income) || 0) + pendRenda - saldoInicial;
       const isThisMonth = this._month === thisMonth();
 
       // mapa categoria→bucket (resolve lançamentos legados sem bucket próprio)
@@ -1979,9 +2114,25 @@
 
       const gastoBy = {}; const txBy = {};
       BUCKETS.forEach((b) => { gastoBy[b.id] = 0; txBy[b.id] = []; });
+      // aportes/gastos provisionados contam aqui (a renda pendente também conta):
+      // o envelope mostra o plano do mês, não o caixa.
       manual.filter((t) => t.kind === 'expense').forEach((t) => {
         const k = bucketOf(t); gastoBy[k] += t.amount; txBy[k].push(t);
       });
+
+      // destinado[bucket] = soma dos planos dos itens do envelope (o valor
+      // provisionado de cada item, pago ou não) — base da visualização "Disponível".
+      const fxRate = (profile.fx && Number(profile.fx.BRLperUSD)) || 0;
+      const destinadoBy = {};
+      BUCKETS.forEach((b) => { destinadoBy[b.id] = 0; });
+      (profile.budget || []).forEach((it) => {
+        if (it.kind === 'income') return;
+        const k = DEFAULT_ALLOCATION[it.bucket] != null ? it.bucket : 'custo-fixo';
+        destinadoBy[k] += this._planBRL(it, fxRate);
+      });
+      // Liberdade e Metas não têm itens de orçamento — o "destino" delas são os
+      // aportes aos objetivos (lançamentos no próprio bucket). Contam como destinado.
+      ['liberdade', 'metas'].forEach((k) => { destinadoBy[k] += gastoBy[k] || 0; });
 
       const head = elt('div', 'fin-sec-head');
       head.appendChild(elt('span', 'fin-sec-title', 'Controle do mês'));
@@ -1995,13 +2146,41 @@
 
       const card = elt('div', 'card');
 
-      const totalPct = () => ACTIVE_BUCKETS.reduce((s, b) => s + (Number(alloc[b.id]) || 0), 0);
+      // Meta em R$ de um envelope: fixa em R$ > "resto da renda" (renda − metas
+      // dos demais, o envelope marcado em profile.allocationRest) > % da renda.
+      const restId = profile.allocationRest || null;
+      const devoOf = (id) => {
+        if (fixed[id] != null) return fixed[id];
+        if (id === restId) {
+          const outras = ACTIVE_BUCKETS.filter((b) => b.id !== id).reduce((s, b) => s
+            + (fixed[b.id] != null ? fixed[b.id] : Math.round(renda * (Number(alloc[b.id]) || 0)) / 100), 0);
+          return Math.max(0, Math.round((renda - outras) * 100) / 100);
+        }
+        return Math.round(renda * (Number(alloc[id]) || 0)) / 100;
+      };
+      // % efetiva de um envelope: metas fixas e "resto" derivam de R$÷renda.
+      const effPct = (id) => ((fixed[id] != null || id === restId)
+        ? (renda > 0 ? (devoOf(id) / renda) * 100 : 0)
+        : (Number(alloc[id]) || 0));
+      const totalPct = () => ACTIVE_BUCKETS.reduce((s, b) => s + effPct(b.id), 0);
       const meta = elt('div', 'fin-env-meta');
-      meta.innerHTML = `<span>Renda do mês <strong>${brl(renda)}</strong></span>`;
+      meta.innerHTML = `<span>Renda do mês <strong>${brl(renda)}</strong>`
+        + (pendRenda > 0 ? ` <span class="muted">(${brl(pendRenda)} a receber)</span>` : '') + '</span>';
       const tp = totalPct();
       const totEl = elt('span', 'fin-env-total' + (Math.abs(tp - 100) > 0.5 ? ' off' : ''), `Alocado ${tp.toFixed(0)}%`);
       meta.appendChild(totEl);
       card.appendChild(meta);
+
+      // Alternador das 2 visualizações (só fora do modo edição de metas).
+      if (!this._allocEdit) {
+        const seg = elt('div', 'fin-envview-seg');
+        [['used', 'Utilizado'], ['free', 'Disponível']].forEach(([mode, lbl]) => {
+          const opt = elt('button', 'fin-envview-opt' + ((this._envView || 'used') === mode ? ' on' : ''), lbl);
+          opt.onclick = () => { this._envView = mode; this._render(true); };
+          seg.appendChild(opt);
+        });
+        card.appendChild(seg);
+      }
 
       const recomputeTotal = () => {
         const t = totalPct();
@@ -2016,29 +2195,68 @@
         catch (e) { BISA.toast(e.message || 'Erro ao salvar %'); }
       };
 
-      ACTIVE_BUCKETS.forEach((b) => {
-        const pct = Number(alloc[b.id]) || 0;
-        const gasto = Math.round((gastoBy[b.id] || 0) * 100) / 100;
-        const devo = Math.round(renda * pct) / 100;
-        const util = devo > 0 ? gasto / devo : (gasto > 0 ? 1 : 0);
-        const over = gasto > devo + 0.005;
+      if (this._allocEdit) {
+        // Modo "Metas %": uma linha por envelope com slider (inalterado).
+        ACTIVE_BUCKETS.forEach((b) => {
+          const pct = Number(alloc[b.id]) || 0;
+          const gasto = Math.round((gastoBy[b.id] || 0) * 100) / 100;
 
-        const row = elt('div', 'fin-env-row');
-        const top = elt('div', 'fin-env-top');
-        const dot = elt('span', 'fin-env-dot'); dot.style.background = b.color;
-        const caret = elt('span', 'fin-env-caret', this._expandedBuckets.has(b.id) ? '▾' : '▸');
-        const pctEl = elt('span', 'fin-env-pct', `${pct.toFixed(0)}%`);
-        top.append(dot, caret, elt('span', 'fin-env-name', b.label), pctEl);
-        if (this._allocEdit) { caret.style.visibility = 'hidden'; top.style.cursor = 'default'; } else {
-          top.onclick = () => {
-            if (this._expandedBuckets.has(b.id)) this._expandedBuckets.delete(b.id);
-            else this._expandedBuckets.add(b.id);
-            this._render(true);
-          };
-        }
-        row.appendChild(top);
+          // Envelope com meta fixa em R$: sem slider — mostra o valor (editável)
+          // e um botão para voltar a usar %.
+          if (fixed[b.id] != null) {
+            const dpct = renda > 0 ? Math.round((fixed[b.id] / renda) * 100) : 0;
+            const frow = elt('div', 'fin-env-row');
+            const ftop = elt('div', 'fin-env-top');
+            const fdot = elt('span', 'fin-env-dot'); fdot.style.background = b.color;
+            const fcaret = elt('span', 'fin-env-caret', ''); fcaret.style.visibility = 'hidden';
+            ftop.append(fdot, fcaret, elt('span', 'fin-env-name', b.label), elt('span', 'fin-env-pct', `${dpct}%`));
+            ftop.style.cursor = 'default';
+            frow.appendChild(ftop);
+            const fxr = elt('div', 'fin-env-fixedrow');
+            const fval = elt('button', 'fin-env-fixedval', `Meta fixa: ${brl(fixed[b.id])}`);
+            fval.onclick = () => this._openAmountSheet({
+              title: `Meta fixa · ${b.label}`, initial: fixed[b.id], confirmLabel: 'Salvar meta',
+              onConfirm: (amount) => this._setEnvelopeFixed(b.id, amount),
+            });
+            const unpin = elt('button', 'fin-env-unpin', 'Usar %');
+            unpin.onclick = () => this._setEnvelopeFixed(b.id, 0);
+            fxr.append(fval, unpin);
+            frow.appendChild(fxr);
+            card.appendChild(frow);
+            return;
+          }
 
-        if (this._allocEdit) {
+          // Envelope "resto da renda": sem slider — a meta é o que sobra depois
+          // das metas fixas e das % dos demais.
+          if (b.id === restId) {
+            const devo = devoOf(b.id);
+            const dpct = renda > 0 ? Math.round((devo / renda) * 100) : 0;
+            const rrow = elt('div', 'fin-env-row');
+            const rtop = elt('div', 'fin-env-top');
+            const rdot = elt('span', 'fin-env-dot'); rdot.style.background = b.color;
+            const rcaret = elt('span', 'fin-env-caret', ''); rcaret.style.visibility = 'hidden';
+            rtop.append(rdot, rcaret, elt('span', 'fin-env-name', b.label), elt('span', 'fin-env-pct', `${dpct}%`));
+            rtop.style.cursor = 'default';
+            rrow.appendChild(rtop);
+            const rxr = elt('div', 'fin-env-fixedrow');
+            rxr.appendChild(elt('span', 'fin-env-fixedval', `Resto da renda: ${brl(devo)}`));
+            const unrest = elt('button', 'fin-env-unpin', 'Usar %');
+            unrest.onclick = () => this._setEnvelopeRest(b.id, false);
+            rxr.appendChild(unrest);
+            rrow.appendChild(rxr);
+            card.appendChild(rrow);
+            return;
+          }
+
+          const row = elt('div', 'fin-env-row');
+          const top = elt('div', 'fin-env-top');
+          const dot = elt('span', 'fin-env-dot'); dot.style.background = b.color;
+          const caret = elt('span', 'fin-env-caret', ''); caret.style.visibility = 'hidden';
+          const pctEl = elt('span', 'fin-env-pct', `${pct.toFixed(0)}%`);
+          top.append(dot, caret, elt('span', 'fin-env-name', b.label), pctEl);
+          top.style.cursor = 'default';
+          row.appendChild(top);
+
           const slider = elt('input', 'fin-env-slider');
           slider.type = 'range'; slider.min = '0'; slider.max = '100'; slider.step = '1'; slider.value = String(pct);
           sliders.push({ id: b.id, el: slider, pctEl });
@@ -2069,28 +2287,103 @@
             fit.onclick = () => this._fitAllocation(b.id, renda, gastoBy, alloc);
             row.appendChild(fit);
           }
-        } else {
-          const bar = elt('div', 'fin-env-bar');
-          const fill = elt('div', 'fin-env-fill');
-          fill.style.width = `${Math.min(100, util * 100).toFixed(0)}%`;
-          fill.style.background = over ? 'var(--negative)'
-            : (b.id === 'liberdade' || b.id === 'conforto' || b.id === 'custo-fixo' ? b.color : 'var(--primary)');
-          fill.style.opacity = over ? '0.45' : '0.30';
-          const nums = elt('div', 'fin-env-nums');
-          nums.append(
-            elt('strong', over ? 'fin-value-neg' : null, brl(gasto)),
-            elt('span', 'muted', '/'),
-            elt('span', 'muted', brl(devo)),
+          // Fixar esta meta num valor exato em R$ (para alvos que não são % redondo).
+          const pin = elt('button', 'fin-env-fit', 'Fixar em R$');
+          pin.onclick = () => this._openAmountSheet({
+            title: `Meta fixa · ${b.label}`,
+            initial: Math.round(renda * pct) / 100 || null,
+            confirmLabel: 'Fixar meta',
+            onConfirm: (amount) => this._setEnvelopeFixed(b.id, amount),
+          });
+          row.appendChild(pin);
+          // Marcar este envelope como o "resto": recebe o que sobrar da renda
+          // depois das metas fixas e das % dos outros (fecha os 100% sozinho).
+          const restBtn = elt('button', 'fin-env-fit', 'Receber o resto da renda');
+          restBtn.onclick = () => this._setEnvelopeRest(b.id, true);
+          row.appendChild(restBtn);
+          card.appendChild(row);
+        });
+      } else {
+        // Modo visualização (Modelo A): anéis em linha. O anel mostra quanto do
+        // envelope já foi usado (gasto ÷ devo); tocar abre os lançamentos abaixo.
+        const noCur = (v) => brl(v).replace(/^R\$\s?/, '');
+        const rings = elt('div', 'fin-envA-rings');
+        ACTIVE_BUCKETS.forEach((b) => {
+          const gasto = Math.round((gastoBy[b.id] || 0) * 100) / 100;
+          const devo = devoOf(b.id);
+          const destinado = Math.round((destinadoBy[b.id] || 0) * 100) / 100;
+
+          let fillPct; let over; let valsText;
+          if (this._envView === 'free') {
+            // Disponível: anel = quanto ainda está LIVRE (orçado − destinado).
+            // Nada destinado → 100% livre; é o contrário da vista "Utilizado".
+            const livre = Math.max(0, devo - destinado);
+            fillPct = devo > 0 ? Math.round((livre / devo) * 100) : (destinado > 0 ? 0 : 100);
+            over = destinado > devo + 0.005; // envelope super-comprometido
+            valsText = `${noCur(destinado)} / ${noCur(devo)}`;
+          } else {
+            // Utilizado: anel = quanto já foi GASTO do orçado.
+            const util = devo > 0 ? gasto / devo : (gasto > 0 ? 1 : 0);
+            fillPct = Math.round(util * 100);
+            over = gasto > devo + 0.005;
+            valsText = `${noCur(gasto)} / ${noCur(devo)}`;
+          }
+
+          const cell = elt('button', 'fin-envA-cell' + (this._expandedBuckets.has(b.id) ? ' on' : ''));
+          const ring = elt('div', 'fin-envA-ring');
+          ring.style.setProperty('--p', String(Math.min(100, Math.max(0, fillPct))));
+          ring.style.setProperty('--c', over ? 'var(--negative)' : b.color);
+          ring.appendChild(elt('b', over ? 'fin-value-neg' : null, `${fillPct}%`));
+          const nameEl = elt('span', 'fin-envA-name', b.label);
+          if (fixed[b.id] != null) nameEl.append(elt('span', 'fin-envA-pin', 'fixo'));
+          else if (b.id === restId) nameEl.append(elt('span', 'fin-envA-pin', 'resto'));
+          cell.append(
+            ring,
+            nameEl,
+            elt('span', 'fin-envA-vals' + (over ? ' neg' : ''), valsText),
           );
-          if (over) nums.appendChild(elt('span', 'fin-env-over', '⚠'));
-          bar.append(fill, nums);
-          row.appendChild(bar);
-          if (this._expandedBuckets.has(b.id)) this._renderBucketTxs(row, b, txBy[b.id], isThisMonth);
-        }
-        card.appendChild(row);
-      });
+          cell.onclick = () => {
+            if (this._expandedBuckets.has(b.id)) this._expandedBuckets.delete(b.id);
+            else this._expandedBuckets.add(b.id);
+            this._render(true);
+          };
+          rings.appendChild(cell);
+        });
+        card.appendChild(rings);
+
+        // Lançamentos do(s) envelope(s) aberto(s), logo abaixo da fileira.
+        ACTIVE_BUCKETS.forEach((b) => {
+          if (!this._expandedBuckets.has(b.id)) return;
+          const sub = elt('div', 'fin-envA-sub');
+          const sh = elt('div', 'fin-envA-subhead');
+          const sdot = elt('span', 'fin-env-dot'); sdot.style.background = b.color;
+          sh.append(sdot, elt('span', null, b.label));
+          sub.appendChild(sh);
+          this._renderBucketTxs(sub, b, txBy[b.id], isThisMonth);
+          card.appendChild(sub);
+        });
+      }
 
       wrap.appendChild(card);
+    },
+
+    // Marca (on=true) ou desmarca um envelope como "resto da renda".
+    async _setEnvelopeRest(bucketId, on) {
+      try {
+        await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: bucketId, rest: on } });
+        BISA.toast(on ? 'Envelope recebe o resto da renda' : 'Meta voltou para %');
+        this._render(true);
+      } catch (e) { BISA.toast(e.message || 'Erro ao salvar'); }
+    },
+
+    // Fixa (amount > 0) ou desafixa (amount <= 0) a meta de um envelope em R$.
+    // Quando fixo, o "devo gastar" passa a ser o valor exato (não %×renda).
+    async _setEnvelopeFixed(bucketId, amount) {
+      try {
+        await BISA.api('/finance/allocation', { method: 'PATCH', json: { bucket: bucketId, amount } });
+        BISA.toast(Number(amount) > 0 ? 'Meta fixada em R$!' : 'Meta voltou para %');
+        this._render(true);
+      } catch (e) { BISA.toast(e.message || 'Erro ao salvar meta'); }
     },
 
     // Fixa a meta da categoria no % já gasto (gasto/renda) e rebalanceia as
@@ -2133,26 +2426,19 @@
         });
         const del = elt('button', 'fin-bud-subbtn del', '✕');
         del.title = 'Excluir lançamento';
-        let armed = false, timer = null;
-        del.onclick = async () => {
-          if (!armed) {
-            armed = true; del.classList.add('confirm'); del.textContent = 'Excluir?';
-            timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = '✕'; }, 3000);
-            return;
-          }
-          clearTimeout(timer);
+        armDelete(del, async () => {
           try {
-            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}`, { method: 'DELETE' });
+            await BISA.api(`/finance/tx?id=${encodeURIComponent(tx.id)}&creditGoal=1`, { method: 'DELETE' });
             BISA.toast('Gasto excluído'); this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao excluir'); }
-        };
+        });
         act.append(edit, del);
         srow.append(
           elt('span', 'fin-bud-subdate', fmtDate(tx.date)),
           elt('span', 'fin-bud-subdesc', tx.desc || tx.category || '—'),
-          elt('strong', 'fin-bud-subamt', brl(tx.amount)),
-          act,
         );
+        if (tx.pending) srow.appendChild(elt('span', 'fin-inc-sub pend', 'provisionado'));
+        srow.append(elt('strong', 'fin-bud-subamt', brl(tx.amount)), act);
         sub.appendChild(srow);
       });
       if (isThisMonth) {
@@ -2176,297 +2462,84 @@
         confirmLabel: 'Salvar gasto',
         onConfirm: async (amount, desc, goalId) => {
           try {
+            // creditGoal: objetivo vinculado é creditado pelo servidor (1 request)
             await BISA.api('/finance/tx', {
               method: 'POST',
               json: { kind: 'expense', amount, desc: desc || bucketLabel(bucketId),
-                category: (desc || bucketId).slice(0, 40), bucket: bucketId, goalId: goalId || undefined, date: todayISO() },
+                category: (desc || bucketId).slice(0, 40), bucket: bucketId, goalId: goalId || undefined,
+                date: todayISO(), creditGoal: true },
             });
-            await this._addToObjective(goalId, amount);
             BISA.toast('Gasto lançado!'); this._render(true);
           } catch (e) { BISA.toast(e.message || 'Erro ao salvar'); }
         },
       });
     },
 
-    // ── Controle do mês (despesas planejadas × realizadas) ───────────────
-    // Cada linha de despesa (profile.budget, kind ≠ income) é casada com o
-    // realizado (summary.cash.byCategory) pela categoria. Mostra status, alerta
-    // de contas vencidas/a vencer, e pagamento em 1 toque. Renda fica à parte.
-    _fillBudget(wrap, profileResp, summary) {
-      wrap.innerHTML = '';
-      this._destroySortables();
-      const profile = profileResp && profileResp.profile;
-      const allBudget = (profile && profile.budget) || [];
-      const budget = allBudget.filter((b) => b.kind !== 'income');
-      if (budget.length === 0) return;
-      this._incomeCatsOrder = allBudget.filter((b) => b.kind === 'income').map((b) => b.category);
-
-      // Cabeçalho com botão Ordenar/Concluir.
-      const head = elt('div', 'fin-sec-head');
-      head.appendChild(elt('span', 'fin-sec-title', 'Controle do mês'));
-      const orderBtn = elt('button', 'fin-addbtn', this._reorderMode ? '✓ Concluir' : '↕ Ordenar');
-      head.appendChild(orderBtn);
-      wrap.appendChild(head);
-
-      if (this._reorderMode) {
-        orderBtn.onclick = () => this._saveOrder(wrap);
-        this._renderReorder(wrap, budget);
-        return;
-      }
-      orderBtn.onclick = () => this._openSortMenu(orderBtn);
-
-      const fx = (profile.fx && Number(profile.fx.BRLperUSD)) || 0;
-      const spentBy = (summary && summary.cash && summary.cash.byCategory) || {};
-      const isThisMonth = this._month === thisMonth();
-      const todayDay = new Date().getDate();
-      const ctx = { fx, doneMap: spentBy, isThisMonth, todayDay };
-
-      const planBRL = (b) => this._planBRL(b, fx);
-      const doneBRL = (b) => Number(spentBy[b.category] || 0);
-
-      const card = elt('div', 'card');
-
-      // Agrupa preservando a ordem de aparição dos grupos.
-      const groups = [];
-      const byGroup = {};
-      for (const b of budget) {
-        const g = b.group || 'Outros';
-        if (!byGroup[g]) { byGroup[g] = []; groups.push(g); }
-        byGroup[g].push(b);
-      }
-
-      // Recurring bills: conta vencidas e a vencer (≤5 dias) entre as pendentes.
-      let overdueCount = 0, soonCount = 0;
-      if (isThisMonth) {
-        for (const b of budget) {
-          if (!b.dueDay) continue;
-          if (doneBRL(b) > 0) continue;
-          if (todayDay > b.dueDay) overdueCount++;
-          else if (b.dueDay - todayDay <= 5) soonCount++;
-        }
-      }
-      if (overdueCount > 0) {
-        const a = elt('div', 'fin-bud-alert');
-        a.textContent = `⚠ ${overdueCount} conta${overdueCount > 1 ? 's' : ''} vencida${overdueCount > 1 ? 's' : ''}` +
-          (soonCount > 0 ? ` · ${soonCount} vence em breve` : '');
-        card.appendChild(a);
-      } else if (soonCount > 0) {
-        const a = elt('div', 'fin-bud-alert soft');
-        a.textContent = `🗓 ${soonCount} conta${soonCount > 1 ? 's' : ''} vence${soonCount > 1 ? 'm' : ''} em breve`;
-        card.appendChild(a);
-      }
-
-      let planOut = 0, doneOut = 0, leftToPay = 0;
-
-      groups.forEach((g) => {
-        const items = byGroup[g];
-        const gPlan = items.reduce((s, b) => s + planBRL(b), 0);
-        const gDone = items.reduce((s, b) => s + doneBRL(b), 0);
-        planOut += gPlan; doneOut += gDone;
-
-        const gwrap = elt('div', 'fin-bud-group');
-        const ghead = elt('div', 'fin-bud-ghead');
-        const gtot = elt('span', 'fin-bud-ghead-vals');
-        gtot.innerHTML = `<strong>${brl(gDone)}</strong> <span class="muted">/ ${brl(gPlan)}</span>`;
-        ghead.append(elt('span', null, g), gtot);
-        gwrap.appendChild(ghead);
-
-        this._sortItems(items, doneBRL).forEach((b) => {
-          const { plan, done } = this._budgetLine(gwrap, b, ctx);
-          leftToPay += Math.max(0, plan - done);
-        });
-
-        card.appendChild(gwrap);
-      });
-
-      // Rodapé: realizado × planejado + quanto ainda falta pagar.
-      const foot = elt('div', 'fin-bud-foot');
-      const mk = (lbl, done, plan, cls) => {
-        const r = elt('div', 'fin-bud-foot-row');
-        const v = elt('span');
-        v.innerHTML = `<strong class="${cls || ''}">${brl(done)}</strong> <span class="muted">/ ${brl(plan)}</span>`;
-        r.append(elt('span', null, lbl), v);
-        return r;
-      };
-      foot.appendChild(mk('Saídas', doneOut, planOut, doneOut > planOut ? 'fin-value-neg' : ''));
-      if (isThisMonth) {
-        const left = elt('div', 'fin-bud-foot-row fin-bud-foot-left');
-        const v = elt('span', 'fin-value-neg', brl(leftToPay));
-        left.append(elt('span', null, 'Ainda falta pagar'), v);
-        foot.appendChild(left);
-      }
-      card.appendChild(foot);
-      wrap.appendChild(card);
-    },
-
-    // ── Modo Ordenar (arrastar localidades e itens) ──────────────────────
-    // Lista enxuta: cada grupo é arrastável pela alça do cabeçalho; cada item
-    // é arrastável pela sua alça (Sortable independente por grupo → itens não
-    // saem da localidade). "Concluir" coleta a ordem do DOM e persiste.
-    _renderReorder(wrap, budget) {
-      const card = elt('div', 'card');
-      const hint = elt('p', 'muted', 'Arraste pela alça ≡ para reordenar as localidades e os itens dentro de cada uma.');
-      hint.style.cssText = 'font-size:.84rem;margin:0 0 12px';
-      card.appendChild(hint);
-
-      // Agrupa preservando a ordem de aparição.
-      const groups = [];
-      const byGroup = {};
-      for (const b of budget) {
-        const g = b.group || 'Outros';
-        if (!byGroup[g]) { byGroup[g] = []; groups.push(g); }
-        byGroup[g].push(b);
-      }
-
-      const mkHandle = (extra) => elt('span', `fin-reorder-handle ${extra}`, '≡');
-
-      const groupsBox = elt('div', 'fin-reorder-groups');
-      groups.forEach((g) => {
-        const gblock = elt('div', 'fin-reorder-gblock');
-        gblock.dataset.group = g;
-
-        const ghead = elt('div', 'fin-reorder-ghead');
-        ghead.append(mkHandle('fin-reorder-ghandle'), elt('span', 'fin-reorder-gname', g));
-        gblock.appendChild(ghead);
-
-        const itemsBox = elt('div', 'fin-reorder-items');
-        byGroup[g].forEach((b) => {
-          const item = elt('div', 'fin-reorder-item');
-          item.dataset.category = b.category;
-          item.append(mkHandle('fin-reorder-ihandle'),
-            elt('span', 'fin-reorder-iname', b.label || b.category));
-          itemsBox.appendChild(item);
-        });
-        gblock.appendChild(itemsBox);
-        groupsBox.appendChild(gblock);
-
-        if (window.Sortable) {
-          this._sortables.push(new Sortable(itemsBox, {
-            handle: '.fin-reorder-ihandle', animation: 150,
-            ghostClass: 'drag-ghost', chosenClass: 'drag-chosen',
-          }));
-        }
-      });
-      card.appendChild(groupsBox);
-
-      if (window.Sortable) {
-        this._sortables.push(new Sortable(groupsBox, {
-          handle: '.fin-reorder-ghandle', animation: 150,
-          ghostClass: 'drag-ghost', chosenClass: 'drag-chosen',
-        }));
-      }
-
-      const done = elt('button', 'btn block', 'Concluir');
-      done.style.marginTop = '14px';
-      done.onclick = () => this._saveOrder(wrap);
-      card.appendChild(done);
-
-      wrap.appendChild(card);
-    },
-
-    // Coleta a ordem atual do DOM (grupos → itens), preserva a renda na frente,
-    // persiste e sai do modo ordenar.
-    async _saveOrder(wrap) {
-      const expenseOrder = [];
-      const groupsBox = wrap.querySelector('.fin-reorder-groups');
-      if (groupsBox) {
-        groupsBox.querySelectorAll('.fin-reorder-gblock').forEach((gb) => {
-          gb.querySelectorAll('.fin-reorder-item').forEach((it) => {
-            if (it.dataset.category) expenseOrder.push(it.dataset.category);
-          });
-        });
-      }
-      const order = [...this._incomeCatsOrder, ...expenseOrder];
-      this._reorderMode = false;
-      try {
-        await BISA.api('/finance/budget/order', { method: 'PUT', json: { order } });
-        BISA.toast('Ordem salva!');
-      } catch (e) { BISA.toast(e.message || 'Erro ao salvar ordem'); }
-      this._render(true);
-    },
-
-    // Controle de pagamento por linha.
-    // Pendente: receita = 1 toque registra o planejado (+ ✎ p/ outro valor);
-    //   despesa = "Pagar" abre o teclado p/ DEFINIR o valor real (planejado é só
-    //   sugestão via chip, pois o gasto varia mês a mês).
-    // Já lançado: receita = ✓ + ✎ p/ CORRIGIR o recebido (substitui); despesa =
-    //   ✓ + ＋ p/ somar outro gasto na categoria (gastos acumulam vários).
-    _renderPayControl(host, b, plan, done, income) {
-      host.innerHTML = '';
-      if (done > 0) {
-        const chk = elt('span', 'fin-bud-check', '✓');
-        if (income) {
-          const edit = elt('button', 'fin-bud-pay ghost', '✎');
-          edit.title = 'Corrigir valor recebido';
-          edit.onclick = () => this._openAmountSheet({
-            title: b.label || b.category || 'Valor',
-            initial: done, plan, allowZero: true,
-            confirmLabel: 'Corrigir recebido',
-            onConfirm: (amount) => this._setRealized(b, amount),
-          });
-          host.append(chk, edit);
-        } else {
-          const more = elt('button', 'fin-bud-pay ghost', '＋');
-          more.title = 'Lançar outro valor nesta categoria';
-          more.onclick = () => this._openPayForm(host, b, plan, done, income);
-          host.append(chk, more);
-        }
-        return;
-      }
-      if (income) {
-        const pay = elt('button', 'fin-bud-pay', 'Receber');
-        pay.title = plan > 0 ? `Receber ${brl(plan)} (planejado)` : 'Registrar recebimento';
-        pay.onclick = () => (plan > 0 ? this._postPayment(b, plan, income)
-          : this._openPayForm(host, b, plan, done, income));
-        const edit = elt('button', 'fin-bud-pay ghost', '✎');
-        edit.title = 'Receber outro valor';
-        edit.onclick = () => this._openPayForm(host, b, plan, done, income);
-        host.append(pay, edit);
-      } else {
-        const pay = elt('button', 'fin-bud-pay', 'Pagar');
-        pay.title = plan > 0 ? `Pagar (planejado ${brl(plan)})` : 'Registrar pagamento';
-        pay.onclick = () => this._openPayForm(host, b, plan, done, income);
-        host.append(pay);
-      }
-    },
-
-    // Corrige o realizado de uma RECEITA: apaga os lançamentos manuais dessa
-    // categoria no mês exibido e grava um único com o novo valor (0 = só apaga).
-    // Receita vem só de lançamentos manuais (incomeByCategory), então substituir
-    // é seguro — ao contrário de gastos, que acumulam vários por categoria.
-    async _setRealized(b, amount, usd) {
+    // Corrige o realizado de uma RECEITA da categoria no mês exibido: edita o
+    // lançamento existente in-place (PATCH) e remove eventuais duplicados; sem
+    // lançamento ainda, cria um (0 = só apaga). Receita vem só de lançamentos
+    // manuais (incomeByCategory), então corrigir substituindo é seguro.
+    async _setRealized(b, amount, usd, pending) {
       const manual = (this._summary && this._summary.cash && this._summary.cash.manual) || [];
       const matching = manual.filter((t) => t.kind === 'income' && t.category === b.category);
       try {
-        for (const t of matching) {
-          await BISA.api(`/finance/tx?id=${encodeURIComponent(t.id)}`, { method: 'DELETE' });
-        }
         if (amount > 0) {
           // Fonte em dólar: registra a cotação implícita na descrição (auditável).
           const desc = (usd > 0)
             ? `${b.label || b.category} — US$ ${fmtNum(usd)} a ${fmtRate(amount / usd)}`
             : (b.label || b.category);
-          await BISA.api('/finance/tx', {
-            method: 'POST',
-            json: { kind: 'income', amount, desc, category: b.category || 'outro', date: todayISO() },
-          });
+          if (matching.length) {
+            await BISA.api('/finance/tx', {
+              method: 'PATCH',
+              json: { id: matching[0].id, amount, desc, date: todayISO(), pending: !!pending },
+            });
+          } else {
+            await BISA.api('/finance/tx', {
+              method: 'POST',
+              json: { kind: 'income', amount, desc, category: b.category || 'outro', date: todayISO(),
+                ...(pending ? { pending: true } : {}) },
+            });
+          }
+          for (const t of matching.slice(1)) {
+            await BISA.api(`/finance/tx?id=${encodeURIComponent(t.id)}`, { method: 'DELETE' });
+          }
+        } else {
+          for (const t of matching) {
+            await BISA.api(`/finance/tx?id=${encodeURIComponent(t.id)}`, { method: 'DELETE' });
+          }
         }
         BISA.toast('Receita atualizada!');
         this._render(true);
       } catch (e) { BISA.toast(e.message || 'Erro ao atualizar'); }
     },
 
-    async _postPayment(b, amount, income) {
+    async _postPayment(b, amount, income, note) {
       if (!(amount > 0)) { BISA.toast('Defina um valor planejado primeiro'); return; }
       try {
         await BISA.api('/finance/tx', {
           method: 'POST',
           json: { kind: income ? 'income' : 'expense', amount,
-            desc: b.label || b.category, category: b.category || 'outro', date: todayISO() },
+            desc: note || b.label || b.category, category: b.category || 'outro', date: todayISO(),
+            ...(!income && b.bucket ? { bucket: b.bucket } : {}) },
         });
         BISA.toast(income ? 'Recebimento registrado!' : 'Pagamento registrado!');
         this._render(true);
       } catch (e) { BISA.toast(e.message || 'Erro ao registrar'); }
+    },
+
+    // Observações já usadas neste mês na categoria (chips de 1 toque no sheet
+    // de lançamento — embrião do vocabulário de tags por item).
+    _noteChips(category, label) {
+      const manual = (this._summary && this._summary.cash && this._summary.cash.manual) || [];
+      const seen = new Set();
+      const chips = [];
+      manual.filter((t) => t.kind === 'expense' && t.category === category).forEach((t) => {
+        const d = (t.desc || '').trim();
+        if (!d || d === label || seen.has(d.toLowerCase())) return;
+        seen.add(d.toLowerCase());
+        chips.push(d);
+      });
+      return chips.slice(0, 6);
     },
 
     // Lançar um valor (receber/pagar) — campo vazio p/ definir o valor; o chip
@@ -2476,25 +2549,11 @@
         title: b.label || b.category || 'Valor',
         initial: null,
         plan,
+        withDesc: true, descFocus: false,
+        descPlaceholder: 'Observação (ex: nome do remédio)',
+        descChips: this._noteChips(b.category, b.label),
         confirmLabel: income ? 'Salvar receita' : 'Registrar pagamento',
-        onConfirm: (amount) => this._postPayment(b, amount, income),
-      });
-    },
-
-    // Editar o valor planejado da linha.
-    _editPlan(planEl, b, plan) {
-      this._openAmountSheet({
-        title: `Planejado · ${b.label || b.category || ''}`,
-        initial: plan > 0 ? plan : null,
-        allowZero: true,
-        confirmLabel: 'Salvar plano',
-        onConfirm: async (amount) => {
-          try {
-            await BISA.api('/finance/budget', { method: 'PATCH', json: { category: b.category, amount } });
-            BISA.toast('Valor planejado atualizado!');
-            this._render(true);
-          } catch (e) { BISA.toast(e.message || 'Erro ao salvar'); }
-        },
+        onConfirm: (amount, note) => this._postPayment(b, amount, income, note),
       });
     },
 
@@ -2503,8 +2562,11 @@
     // inputMode='none' p/ não brigar com o teclado abaixo) + teclado numérico
     // grande + chip do planejado. A Pencil (Scribble) e o teclado escrevem no
     // mesmo campo. opts: { title, initial, plan, confirmLabel, allowZero, onConfirm,
-    //   withDesc, descInitial, descPlaceholder, descChips }. Com withDesc, um campo
-    //   de descrição aparece acima do valor e onConfirm recebe (amount, desc).
+    //   withDesc, descInitial, descPlaceholder, descChips, descFocus, statusToggle,
+    //   pendingInitial }. Com withDesc, um campo de descrição aparece acima do
+    //   valor e onConfirm recebe (amount, desc); descFocus:false mantém o foco
+    //   inicial no valor (descrição opcional, ex.: observação de um pagamento). Com statusToggle, chips Entrou/A receber (textos
+    //   customizáveis via statusLabels) e onConfirm recebe (amount, desc, goalId, pending).
     _openAmountSheet(opts) {
       const { title, initial, plan = 0, confirmLabel = 'Salvar', allowZero = false, onConfirm } = opts;
       this._closeAmountSheet();
@@ -2554,6 +2616,29 @@
         modal.appendChild(f);
       }
 
+      // Status da receita (statusToggle): "Entrou" conta no caixa; "A receber"
+      // fica fora do saldo até ser confirmada. onConfirm recebe o bool no 4º arg.
+      let pending = !!opts.pendingInitial;
+      if (opts.statusToggle) {
+        const f = elt('div', 'fin-item-field');
+        f.appendChild(elt('label', 'fin-item-flabel', 'Status'));
+        const chips = elt('div', 'fin-chips');
+        const mkStatus = (label, val) => {
+          const chip = elt('button', 'fin-chip' + (pending === val ? ' on' : ''), label);
+          chip.onclick = () => {
+            pending = val;
+            [...chips.children].forEach((c) => c.classList.remove('on'));
+            chip.classList.add('on');
+          };
+          chips.appendChild(chip);
+        };
+        const [lblNow, lblPend] = opts.statusLabels || ['Entrou', 'A receber'];
+        mkStatus(lblNow, false);
+        mkStatus(lblPend, true);
+        f.appendChild(chips);
+        modal.appendChild(f);
+      }
+
       const curLabel = opts.curLabel || 'R$';
       const rateBase = Number(opts.rateBase) || 0; // US$ p/ cotação implícita (modo R$)
       const fieldWrap = elt('div', 'fin-amount-fieldwrap');
@@ -2570,13 +2655,8 @@
       const preview = elt('div', 'fin-amount-preview');
       modal.appendChild(preview);
 
-      // Aceita vírgula (pt-BR) ou ponto; remove separador de milhar e ruído.
-      const parse = (s) => {
-        const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, ''));
-        return Number.isFinite(n) ? n : 0;
-      };
       const refresh = () => {
-        const n = parse(input.value);
+        const n = parseDec(input.value);
         if (!(n > 0)) { preview.textContent = ''; return; }
         let txt = curLabel === 'R$' ? `= ${brl(n)}` : `= ${curLabel} ${fmtNum(n)}`;
         if (rateBase > 0) txt += ` · cotação ${fmtRate(n / rateBase)} / US$`;
@@ -2628,10 +2708,10 @@
       cancel.onclick = () => this._closeAmountSheet();
       const save = elt('button', 'btn', confirmLabel);
       const submit = () => {
-        const amount = parse(input.value);
+        const amount = parseDec(input.value);
         if (!(allowZero ? amount >= 0 : amount > 0)) { BISA.toast('Informe um valor válido'); return; }
         this._closeAmountSheet();
-        onConfirm(amount, descInput ? descInput.value.trim() : undefined, selectedGoal);
+        onConfirm(amount, descInput ? descInput.value.trim() : undefined, selectedGoal, pending);
       };
       save.onclick = submit;
       input.onkeydown = (ev) => { if (ev.key === 'Enter') submit(); };
@@ -2646,7 +2726,7 @@
       document.body.appendChild(overlay);
       this._amountOverlay = overlay;
       // Receita nova sem descrição: foca a descrição primeiro; senão, o valor.
-      if (descInput && !opts.descInitial) {
+      if (descInput && !opts.descInitial && opts.descFocus !== false) {
         descInput.focus();
       } else {
         input.focus();
@@ -2800,28 +2880,16 @@
       });
       fC.appendChild(cChips); modal.appendChild(fC);
 
-      const numInp = (labelText, val, ph) => {
-        const inp = elt('input', 'fin-item-inp'); inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = ph || '';
-        if (val != null) inp.value = String(val).replace('.', ',');
-        inp.oninput = () => { let v = inp.value.replace(/[^0-9,]/g, ''); const i = v.indexOf(','); if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/,/g, ''); inp.value = v; };
-        const f = elt('div', 'fin-item-field'); f.append(elt('label', 'fin-item-flabel', labelText), inp); modal.appendChild(f);
-        return inp;
-      };
-      const curInp = numInp('Saldo atual (já acumulado)', obj && obj.current, 'Ex: 8977,62');
-      const tgtInp = numInp('Meta (R$)', obj && obj.target, 'Ex: 80000');
-
-      const parseNum = (s) => { const n = parseFloat(String(s).replace(/\./g, '').replace(',', '.').replace(/[^0-9.]/g, '')); return Number.isFinite(n) ? n : 0; };
+      const curInp = numField(modal, 'Saldo atual (já acumulado)', obj && obj.current, 'Ex: 8977,62');
+      const tgtInp = numField(modal, 'Meta (R$)', obj && obj.target, 'Ex: 80000');
 
       const actions = elt('div', 'fin-item-actions');
       if (editing) {
         const del = elt('button', 'fin-item-del', 'Excluir');
-        let armed = false, timer = null;
-        onTap(del, async () => {
-          if (!armed) { armed = true; del.classList.add('confirm'); del.textContent = 'Confirmar exclusão'; timer = setTimeout(() => { armed = false; del.classList.remove('confirm'); del.textContent = 'Excluir'; }, 3000); return; }
-          clearTimeout(timer);
+        armDelete(del, async () => {
           try { await BISA.api(`/finance/objectives?id=${encodeURIComponent(obj.id)}`, { method: 'DELETE' }); BISA.toast('Objetivo excluído'); this._closeItemEditor(); this._render(true); }
           catch (e) { BISA.toast(e.message || 'Erro ao excluir'); }
-        });
+        }, { label: 'Excluir', armedLabel: 'Confirmar exclusão', tap: true });
         actions.appendChild(del);
       }
       const cancel = elt('button', 'fin-amount-cancel', 'Cancelar'); onTap(cancel, () => this._closeItemEditor());
@@ -2829,7 +2897,7 @@
       onTap(save, async () => {
         const label = labelInp.value.trim();
         if (!label) { BISA.toast('Informe o nome'); return; }
-        const payload = { label, bucket, currency, current: parseNum(curInp.value), target: parseNum(tgtInp.value) };
+        const payload = { label, bucket, currency, current: parseDec(curInp.value), target: parseDec(tgtInp.value) };
         try {
           if (editing) await BISA.api('/finance/objectives', { method: 'PATCH', json: { id: obj.id, ...payload } });
           else await BISA.api('/finance/objectives', { method: 'POST', json: payload });
