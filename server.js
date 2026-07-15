@@ -442,6 +442,21 @@ app.get('/biso-chat/project', requireAuth, (_req, res) => {
     .concat(readBisoProjects().map((p) => ({ id: p.id, name: p.name, desc: p.desc || '' })));
   res.json({ current: readChatFocus(), cwd: resolveBisoCwd(), projects });
 });
+// Preview dos arquivos tocados pelo agente no turno (cards "📁 arquivos" do
+// caderno). Caminho ABSOLUTO (vem do tool_use), confinado ao CWD do foco atual.
+app.get('/biso-chat/file', requireAuth, (req, res) => {
+  const abs = path.resolve(String(req.query.path || ''));
+  const root = path.resolve(resolveBisoCwd());
+  if (abs !== root && !abs.startsWith(root + path.sep)) {
+    return res.status(403).json({ error: 'arquivo fora do foco atual do caderno' });
+  }
+  try {
+    const st = fs.statSync(abs);
+    if (!st.isFile()) return res.status(400).json({ error: 'não é um arquivo' });
+    if (st.size > 300 * 1024) return res.status(413).json({ error: 'grande demais para preview (' + Math.round(st.size / 1024) + 'KB)' });
+    res.json({ name: path.basename(abs), path: abs, content: fs.readFileSync(abs, 'utf8') });
+  } catch { res.status(404).json({ error: 'arquivo não encontrado' }); }
+});
 app.get('/biso-chat/lang', requireAuth, (_req, res) => res.json({ lang: readChatLang() }));
 app.post('/biso-chat/lang', requireAuth, (req, res) => {
   const lang = String((req.body && req.body.lang) || '');
