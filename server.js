@@ -768,6 +768,18 @@ for (const ev of ['add', 'change', 'unlink']) {
 }
 watcher.on('error', (e) => console.error('[bisa] watcher:', e.message));
 
+// Uma segunda instância deve morrer com o pid do ocupante, não com stack
+// de EADDRINUSE — processo velho servindo código antigo é falha silenciosa.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    let pid = '';
+    try { pid = require('child_process').execSync(`lsof -nP -iTCP:${PORT} -sTCP:LISTEN -t | head -1`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch {}
+    console.error(`[bisa] FATAL: porta ${PORT} já em uso${pid ? ` pelo pid ${pid}` : ''} — outra bisa rodando? launchctl kickstart -k gui/$UID/com.bisa.server`);
+    process.exit(1);
+  }
+  throw err;
+});
+
 server.listen(PORT, HOST, () => {
   console.log(`[bisa] online em http://localhost:${PORT} — dados: ${CWD}`);
   const os = require('os');
