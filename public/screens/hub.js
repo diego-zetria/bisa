@@ -161,13 +161,45 @@
   }
 
   /* ── Agenda ── */
-  function renderAgenda(container, events, icsConnected) {
+  function renderAgenda(container, events, icsConnected, onRefresh) {
     container.innerHTML = '';
     if (!icsConnected) {
-      const note = el('p', 'muted');
-      note.style.cssText = 'font-size:.82rem;margin:2px 0 8px;';
-      note.textContent = 'Calendário não conectado';
-      container.appendChild(note);
+      // CTA de verdade (achado da análise automática de vídeo 2026-07-13):
+      // botão → campo p/ colar o link ICS (iCloud/Google) → POST /planner/ics
+      const cta = el('button', 'btn ghost');
+      cta.style.cssText = 'min-height:40px;font-size:.85rem;margin:2px 0 8px;';
+      cta.textContent = '📅 Conectar calendário';
+      cta.onclick = () => {
+        const box = el('div');
+        box.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin:2px 0 8px;';
+        box.innerHTML = `
+          <input class="ics-url" placeholder="Cole o link do calendário (webcal:// ou https://…ics)"
+            style="padding:10px;border:1px solid var(--line);border-radius:8px;font-size:.85rem;background:var(--surface);color:inherit;">
+          <div class="muted" style="font-size:.75rem">iCloud: Calendário → Compartilhar → Calendário Público. Google: Ajustes do calendário → Endereço secreto em iCal.</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn ics-save" style="min-height:40px;flex:1">Conectar</button>
+            <button class="btn ghost ics-cancel" style="min-height:40px">✕</button>
+          </div>`;
+        cta.replaceWith(box);
+        const input = box.querySelector('.ics-url');
+        input.focus();
+        box.querySelector('.ics-cancel').onclick = () => box.replaceWith(cta);
+        box.querySelector('.ics-save').onclick = async () => {
+          const url = input.value.trim();
+          if (!url) { input.focus(); return; }
+          const save = box.querySelector('.ics-save');
+          save.disabled = true; save.textContent = '…';
+          try {
+            const r = await BISA.api('/planner/ics', { method: 'POST', json: { url } });
+            BISA.toast(`Calendário conectado ✓ — ${r.todayEvents} evento(s) hoje`);
+            if (onRefresh) onRefresh();
+          } catch (e) {
+            BISA.toast('⚠ ' + e.message);
+            save.disabled = false; save.textContent = 'Conectar';
+          }
+        };
+      };
+      container.appendChild(cta);
     }
     if (!events || !events.length) {
       const empty = el('p', 'muted');
@@ -534,9 +566,9 @@
       if (!text) return;
       qaBtn.disabled = true;
       try {
-        await BISA.api('/planner/task', { method: 'POST', json: { text } }); // response shape: {ok,task}
+        const resp = await BISA.api('/planner/task', { method: 'POST', json: { text } }); // {ok,task,duplicate?}
         qaInput.value = '';
-        BISA.toast('Tarefa adicionada!');
+        BISA.toast(resp.duplicate ? 'Essa tarefa já existe nesse dia — não dupliquei.' : 'Tarefa adicionada!');
         await refresh();
       } catch (e) {
         BISA.toast(e.message || 'Erro ao adicionar tarefa');
@@ -634,6 +666,13 @@
     camBtn.addEventListener('click', () => BISA.go('sentinel'));
     right.appendChild(camBtn);
 
+    /* Botão Mídia (vídeos/arquivos iPad → inbox no Mac) */
+    const medBtn = el('button', 'btn ghost block');
+    medBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    medBtn.textContent = '🎞 Mídia';
+    medBtn.addEventListener('click', () => BISA.go('media'));
+    right.appendChild(medBtn);
+
     /* Botão Slack corp (slack-watch do biso via proxy /biso) */
     const slkBtn = el('button', 'btn ghost block');
     slkBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
@@ -662,7 +701,7 @@
       const data = await loadDay(refresh);
       if (data) {
         safeRender(_highlightSlot, () => renderHighlight(_highlightSlot, data, refresh));
-        safeRender(_agendaContainer, () => renderAgenda(_agendaContainer, data.events, data.icsConnected));
+        safeRender(_agendaContainer, () => renderAgenda(_agendaContainer, data.events, data.icsConnected, refresh));
         safeRender(blocoCard, () => renderBlocosV2(morningUl, afternoonUl, unplannedUl, data, refresh));
         safeRender(_goalsContainer, () => renderGoals(_goalsContainer, data.weekGoals, refresh));
         if (_eodCard) renderEOD(_eodCard, data);

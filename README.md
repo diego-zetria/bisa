@@ -18,6 +18,11 @@ Docs:
 - `docs/API.md` — contratos backend↔frontend (REST + WS).
 - `docs/FRONTEND.md` — contrato de tela (como escrever uma `screens/<n>.js`).
 - `docs/OPERACAO.md` — runbook do Diego.
+- `docs/CHANGELOG.md` — changelog de features (contexto p/ sessões novas).
+- `docs/caderno-thinking.md` — pílula "thinking" arcade do caderno (sprites 8-bit).
+- Tela `slack` ("📡 Slack corp", botão no hub): tail do slack-watch do biso
+  (screenshot do Slack corporativo + análise de IA). Doc completa no biso:
+  `../biso/docs/slackwatch.md`.
 
 Servidor: Mac do Diego, porta **7778** (biso fica em 7777). Dados da usuária:
 `~/bisa-data/` (fora deste repo). Acesso: browser na LAN + PWA no iPad.

@@ -1,5 +1,5 @@
 // sw.js — service worker mínimo: app-shell cache + passthrough + push.
-const CACHE = 'bisa-v18';
+const CACHE = 'bisa-v23';   // v23: links externos target=_blank — app.js mudou
 const SHELL = ['/', '/style.css', '/app.js',
   '/screens/hub.js', '/screens/journal.js', '/screens/world.js', '/screens/chat.js',
   '/vendor/marked.min.js', '/vendor/purify.min.js', '/vendor/Sortable.min.js', '/vendor/force-graph.min.js'];
@@ -13,7 +13,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // network-first para API/WS; cache-first para o shell estático
   if (e.request.method !== 'GET' || url.pathname.startsWith('/api') ||
-      url.pathname.match(/^\/(codex|planner|pkm|finance|llm|push|pair|feedback|sentinel|file|fs|auth-check|healthz|biso)/)) {
+      url.pathname.match(/^\/(codex|planner|pkm|finance|llm|push|pair|feedback|sentinel|media|file|fs|auth-check|healthz|biso)/)) {
     return; // deixa passar direto à rede
   }
   // navegação (index.html) é network-first: um <script> novo no HTML chegava

@@ -51,6 +51,20 @@
   }
 
   // ---- markdown render (vendored marked + DOMPurify), wikilinks → links ----
+  // Só ~~duplo~~ é strikethrough. O Claude usa ~ p/ "aproximadamente" (~230 °C,
+  // ~15 min) e o del de til simples do marked riscava tudo entre os dois tils
+  // (bug visto no caderno, 2026-07-14). Consumimos o ~ solto como texto para o
+  // tokenizer padrão não rodar (retornar false cairia de volta nele).
+  if (window.marked && window.marked.use) window.marked.use({
+    tokenizer: {
+      del(src) {
+        const m = /^~~(?=[^\s~])([\s\S]*?[^\s~])~~(?=[^~]|$)/.exec(src);
+        if (m) return { type: 'del', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) };
+        if (src.startsWith('~')) return { type: 'text', raw: '~', text: '~' };
+        return false;
+      },
+    },
+  });
   function renderMarkdown(md) {
     const raw = window.marked ? window.marked.parse(md || '') : (md || '');
     let html = window.DOMPurify ? window.DOMPurify.sanitize(raw) : raw;
@@ -59,6 +73,22 @@
       const s = slug.split('/').pop().trim();
       return `<a href="#" data-slug="${s}">${(label || s).trim()}</a>`;
     });
+    // realce de tabelas e fences ```chart — md-tables/md-charts, pós-sanitize —
+    // e links externos com target=_blank (senão o toque navega o PWA p/ fora
+    // do app e perde o caderno; _blank abre no overlay do Safari)
+    if ((window.BISA_MD_TABLES && html.includes('<table')) ||
+        (window.BISA_MD_CHARTS && html.includes('language-chart')) ||
+        html.includes('<a href="http')) {
+      const div = document.createElement('div');
+      div.innerHTML = html;
+      if (window.BISA_MD_TABLES) window.BISA_MD_TABLES.enhance(div);
+      if (window.BISA_MD_CHARTS) window.BISA_MD_CHARTS.enhance(div);
+      div.querySelectorAll('a[href^="http"]').forEach((a) => {
+        if (a.host === location.host) return;
+        a.target = '_blank'; a.rel = 'noopener';
+      });
+      html = div.innerHTML;
+    }
     return html;
   }
 

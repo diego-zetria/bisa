@@ -8,6 +8,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const http = require('http');
 const express = require('express');
 const chokidar = require('chokidar');
@@ -63,8 +64,8 @@ function broadcast(obj) {
 const globalJson = express.json({ limit: '64kb' });
 const bigJson = express.json({ limit: '5mb' });
 app.use((req, res, next) => {
-  if (req.path === '/fs/write' || req.path.startsWith('/pkm/inbox') || req.path.startsWith('/sentinel') || req.path === '/biso' || req.path.startsWith('/biso/')) return next();
-  if (req.path.startsWith('/api/hook/') || req.path.startsWith('/feedback') || req.path === '/vault/write') return bigJson(req, res, next);
+  if (req.path === '/fs/write' || req.path.startsWith('/pkm/inbox') || req.path === '/vault/raw-write' || req.path === '/media/upload' || req.path.startsWith('/sentinel') || req.path === '/biso' || req.path.startsWith('/biso/') || req.path === '/novela' || req.path.startsWith('/novela/')) return next();
+  if (req.path.startsWith('/api/hook/') || req.path.startsWith('/feedback') || req.path === '/vault/write' || req.path === '/finance/onboarding') return bigJson(req, res, next);
   return globalJson(req, res, next);
 });
 
@@ -117,7 +118,7 @@ app.use(makeCodexApiRouter({ requireAuth, codexStore }));
 
 // === notificações (R6a) ====================================================
 const makeNotify = require('./lib/notify');
-const { router: notifyRouter, dispatchNotification } = makeNotify({
+const { router: notifyRouter, dispatchNotification, onNotification } = makeNotify({
   requireAuth,
   loadJournal, findOrCreateDay, saveJournal, genId, todayCodex, nowHMCodex,
   broadcast: (...a) => broadcast(...a),
@@ -146,6 +147,8 @@ app.use(makeFinanceRouter({
   runHeadless: (...a) => llm.runHeadlessForJob('finance-insight', ...a),
   getCwd: () => CWD,
 }));
+const makeOnboardingRouter = require('./lib/finance/onboarding');
+app.use(makeOnboardingRouter({ requireAuth, dispatchNotification, PORT }));
 
 // === motor LLM (sessão chat + política + jobs) =============================
 const makeHeadless = require('./lib/codex/headless');
@@ -159,6 +162,10 @@ const llm = makeLlm({
   broadcast: (...a) => broadcast(...a),
 });
 app.use(llm.router);
+
+// limpeza de ditado (fase 3): transcript bruto → texto escrito, via lib/llm
+const makeDitado = require('./lib/ditado');
+app.use(makeDitado({ requireAuth, llm }).router);
 
 // Scheduler de jobs (briefing/reflexão/semanal) — loop do biso, com o runner
 // roteado pela política da lib/llm (claude -p vs API, ver lib/llm/policy.js).
@@ -197,7 +204,7 @@ const makePush = require('./lib/push');
 const push = makePush({ requireAuth, CWD });
 app.use(push.router);
 // lembretes/notificações relevantes também via push
-push.bridgeNotifications(dispatchNotification);
+push.bridgeNotifications(onNotification);
 
 // === pareamento QR (supervisor) ============================================
 const makePair = require('./lib/pair');
@@ -207,10 +214,74 @@ app.use(makePair({ requireSupervisor, AUTH_TOKEN, PORT }).router);
 const makeFeedback = require('./lib/feedback');
 app.use(makeFeedback({ requireAuth, getCwd: () => CWD, broadcast: (...a) => broadcast(...a) }));
 
+// === mídia (inbox de vídeos/arquivos iPad → Mac, tela "Mídia") ==============
+const makeMedia = require('./lib/media');
+app.use(makeMedia({ requireAuth, getCwd: () => CWD, moveToTrash, broadcast: (...a) => broadcast(...a) }));
+
+// === métricas de uso (loops de medição) =====================================
+// Pares que antes evaporavam: transcript bruto→limpo aceito, rascunho→mensagem
+// enviada, previsão mostrada→aceita. Ficam locais (<CWD>/metrics/eventos.jsonl)
+// e alimentam o few-shot do /biso-predict. Best-effort, nunca bloqueia a UI.
+const METRICS_FILE = path.join(CWD, 'metrics', 'eventos.jsonl');
+app.post('/metrics/log', requireAuth, (req, res) => {
+  const kind = String((req.body && req.body.kind) || '').slice(0, 40);
+  if (!kind) return res.status(400).json({ error: 'kind obrigatório' });
+  const data = (req.body && typeof req.body.data === 'object' && req.body.data) ? req.body.data : {};
+  const row = { ts: new Date().toISOString(), kind };
+  for (const [k, v] of Object.entries(data).slice(0, 12)) {
+    row[k] = typeof v === 'string' ? v.slice(0, 600) : v;
+  }
+  try {
+    fs.mkdirSync(path.dirname(METRICS_FILE), { recursive: true });
+    fs.appendFileSync(METRICS_FILE, JSON.stringify(row) + '\n');
+  } catch (e) { return res.status(500).json({ error: e.message }); }
+  res.json({ ok: true });
+});
+const readMetrics = (kind, n) => {
+  try {
+    return fs.readFileSync(METRICS_FILE, 'utf8').split('\n').filter(Boolean)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((r) => r && r.kind === kind).slice(-n);
+  } catch { return []; }
+};
+
+// === saúde & custos (card em Ajustes) =======================================
+// Gasto de API do mês (llm-usage.jsonl, código de budget já existia sem tela)
+// + status dos LaunchAgents da stack de voz.
+const { monthlyApiSpend } = require('./lib/llm/usage');
+app.get('/ajustes/health', requireAuth, (_req, res) => {
+  const labels = ['com.bisa.server', 'com.bisa.stt', 'com.bisa.stt-en', 'com.bisa.tts'];
+  let list = '';
+  try { list = require('child_process').execSync('launchctl list', { encoding: 'utf8', timeout: 4000 }); } catch {}
+  const agents = labels.map((label) => {
+    const line = list.split('\n').find((l) => l.trim().endsWith(label));
+    const pid = line ? line.trim().split(/\s+/)[0] : '';
+    return { label, up: !!line && pid !== '-' };
+  });
+  let monthUsd = 0; try { monthUsd = monthlyApiSpend(CWD) || 0; } catch {}
+  res.json({
+    agents,
+    api: {
+      monthUsd: +monthUsd.toFixed(2),
+      budgetUsd: parseFloat(process.env.API_BUDGET_MONTHLY_USD || '25') || 25,
+      keyPresent: !!process.env.ANTHROPIC_API_KEY,
+    },
+  });
+});
+
 // === sentinel (proxy reverso → Frigate, câmeras/monitoramento) ==============
 const makeSentinel = require('./lib/sentinel');
 const sentinel = makeSentinel({ requireAuth });
 app.use(sentinel.router);
+
+// === stt (proxy reverso → WhisperLiveKit, ditado local) =====================
+const makeStt = require('./lib/stt');
+const stt = makeStt({ requireAuth });
+app.use(stt.router);
+
+// === tts (voz das respostas: say no Mac + cache, player no iPad) ============
+const makeTts = require('./lib/tts');
+app.use(makeTts({ requireAuth }).router);
 
 // === ponte biso (proxy REST do biso :7777 + chat nativo no projeto do biso) =
 // Auto-configura lendo o .env do biso (porta, token, CWD). Tudo sob a auth do
@@ -234,6 +305,25 @@ const BISO_JOURNAL = process.env.BISO_JOURNAL || path.join(BISO_DIR, 'codex', 'j
 const makeBisoBridge = require('./lib/biso-bridge');
 app.use(makeBisoBridge({ requireAuth, BISO_URL, BISO_TOKEN }).router);
 
+// === ponte de eventos remotos (biso /api/events → Web Push + WS) ============
+// Eventos do corp-watch (menções/DMs do Slack corp etc.) chegam ao biso; esta
+// ponte faz poll com cursor e transforma push:true em notificação nativa no
+// iPad. Ver biso/docs/remote-actions.md.
+const makeEventsBridge = require('./lib/events-bridge');
+makeEventsBridge({
+  BISO_URL, BISO_TOKEN, push,
+  broadcast: (...a) => broadcast(...a),
+  META: process.env.BISA_META_DIR || path.join(CWD, '.meta'),
+}).start();
+
+// === ponte novela-shorts (proxy REST + mídia da API :7779) ==================
+// Mesmo padrão do biso: o iPad fala só com o bisa; a porta/token da API ficam
+// no servidor. Suba a API no Mac com: python api.py (no projeto novela-shorts).
+const NOVELA_URL = process.env.NOVELA_URL || 'http://127.0.0.1:7779';
+const NOVELA_TOKEN = process.env.NOVELA_TOKEN || '';
+const makeNovelaBridge = require('./lib/novela-bridge');
+app.use(makeNovelaBridge({ requireAuth, NOVELA_URL, NOVELA_TOKEN }).router);
+
 // Chat "Biso": reusa a máquina de sessão stream-json do bisa, mas apontada p/ o
 // projeto do biso e com as envs do biso injetadas. Os eventos llm.* dessa sessão
 // são renomeados p/ biso.llm.* para não colidir com o chat do bisa (mesmo broadcast).
@@ -243,23 +333,90 @@ const bisoBroadcast = (obj) => {
     broadcast(Object.assign({}, obj, { type: 'biso.' + obj.type }));
   } else { broadcast(obj); }
 };
-// CWD do chat = projeto ATIVO do biso, lido de .meta/projects.json A CADA TURNO —
-// então trocar de projeto no biso reflete no chat sem reiniciar o bisa. Override
-// explícito: env BISO_CHAT_CWD. Fallback: CWD do .env do biso, depois o dir do biso.
+// FOCO do caderno: para onde a sessão de chat da aba Biso aponta. É INDEPENDENTE
+// do projeto ativo do biso (decisão 2026-07-02): trocar o foco no caderno não mexe
+// na workstation. 'geral' (padrão) = CWD neutro ~/bisa-data/caderno-geral, com
+// CLAUDE.md próprio afinado p/ leitura manuscrita; qualquer outro id vem do
+// .meta/projects.json do biso (lido do disco a cada turno — funciona com o biso
+// desligado). Override explícito: env BISO_CHAT_CWD. A sessão --resume é por CWD,
+// então cada foco mantém sua própria conversa.
+const CHAT_FOCUS_FILE = path.join(CWD, '.meta', 'biso-chat.json');
+const CADERNO_GERAL_DIR = path.join(CWD, 'caderno-geral');
+try {   // seed do modo Geral (1ª execução)
+  fs.mkdirSync(CADERNO_GERAL_DIR, { recursive: true });
+  const cm = path.join(CADERNO_GERAL_DIR, 'CLAUDE.md');
+  if (!fs.existsSync(cm)) fs.writeFileSync(cm, `# Caderno (bisa) — modo Geral
+
+Você está conversando pelo CADERNO do bisa: o usuário escreve À MÃO (Apple Pencil)
+num iPad e lê as respostas numa tela pequena.
+
+- Responda curto e direto — leitura manuscrita, sem paredes de texto.
+- ESPELHE O IDIOMA do usuário: mensagem em português → responda em português;
+  mensagem em inglês (ex.: "Hello") → responda em inglês, e mantenha o idioma
+  até ele trocar.
+- Prefira listas curtas e passos numerados; evite blocos de código longos.
+- Este modo é GERAL: não há projeto de código em foco. Para tarefas de um projeto
+  específico, o usuário troca o foco no seletor do caderno.
+- Você roda no Mac pessoal com permissões amplas — seja conservador com comandos
+  destrutivos; confirme antes de apagar/mover qualquer coisa.
+
+## Gráficos inline (fence \`\`\`chart)
+
+Quando os dados forem "gráficáveis" (comparação, tendência, proporção, KPIs),
+prefira um fence \`\`\`chart com JSON em vez de tabela — o caderno desenha SVG:
+
+    \`\`\`chart
+    {"type":"bar","title":"Gastos do mês","unit":"R$",
+     "data":[["Mercado",1842.3],["Transporte",420]]}
+    \`\`\`
+
+- "type": "bar" (grandezas ≥0) · "line" (tendência) · "donut" (proporção,
+  ≤6 fatias) · "stat" (KPIs; valor pode ser string).
+- "data": SEMPRE pares [rótulo, valor]; "unit"/"title" opcionais.
+- Faixa boa: 3–8 itens; muitos números → tabela normal (já ganha barras).
+- NUNCA invente valores para caber num gráfico.
+`, 'utf8');
+} catch (e) { console.warn('[bisa] caderno-geral seed:', e.message); }
+const readBisoProjects = () => {
+  try { return JSON.parse(fs.readFileSync(path.join(BISO_DIR, '.meta', 'projects.json'), 'utf8')).projects || []; }
+  catch { return []; }
+};
+const readChatFocus = () => {
+  try { return JSON.parse(fs.readFileSync(CHAT_FOCUS_FILE, 'utf8')).project || 'geral'; }
+  catch { return 'geral'; }
+};
+const readChatMeta = () => {
+  try { return JSON.parse(fs.readFileSync(CHAT_FOCUS_FILE, 'utf8')); } catch { return {}; }
+};
+const writeChatMeta = (patch) => {
+  const cur = Object.assign(readChatMeta(), patch);
+  fs.mkdirSync(path.dirname(CHAT_FOCUS_FILE), { recursive: true });
+  fs.writeFileSync(CHAT_FOCUS_FILE, JSON.stringify(cur, null, 2) + '\n', 'utf8');
+};
+const writeChatFocus = (id) => writeChatMeta({ project: id });
+// Idioma do caderno (pt|en): injetado como system prompt em CADA turno do chat
+// (a regra por saudação "Olá/Hello" do CLAUDE.md era ignorada com histórico).
+const readChatLang = () => (readChatMeta().lang === 'en' ? 'en' : 'pt');
+const writeChatLang = (lang) => writeChatMeta({ lang });
 const resolveBisoCwd = () => {
   if (process.env.BISO_CHAT_CWD) return BISO_CHAT_CWD;      // override explícito
-  try {
-    const pj = JSON.parse(fs.readFileSync(path.join(BISO_DIR, '.meta', 'projects.json'), 'utf8'));
-    const cur = (pj.projects || []).find((p) => p.id === pj.current);
-    if (cur && cur.path && fs.existsSync(cur.path)) return cur.path;
-  } catch {}
-  return BISO_CHAT_CWD;
+  const focus = readChatFocus();
+  if (focus !== 'geral') {
+    const p = readBisoProjects().find((x) => x.id === focus);
+    if (p && p.path && fs.existsSync(p.path)) return p.path;
+  }
+  return CADERNO_GERAL_DIR;   // padrão e fallback (projeto removido/desconhecido)
 };
 
 const bisoSession = makeBisoSession({
-  CWD: BISO_CHAT_CWD, getCwd: resolveBisoCwd, CLAUDE_CMD, USER_SHELL,
+  CWD: BISO_CHAT_CWD, getCwd: resolveBisoCwd, getLang: readChatLang, CLAUDE_CMD, USER_SHELL,
   broadcast: bisoBroadcast, dispatchNotification,
   extraEnv: { BISO_URL, BISO_TOKEN, BISO_JOURNAL },
+  // O agente da aba Biso pode EXECUTAR ações no Mac pessoal (buscar arquivos,
+  // rodar comandos/scripts) — modo headless não tem prompt de permissão, então
+  // liberamos tudo. Escolha do usuário 2026-07-01. Mantenha SÓ na tailnet
+  // (Tailscale) e com AUTH_TOKEN forte: é execução total de comando no Mac.
+  permissionMode: 'bypassPermissions',
 });
 const handleBisoWsMessage = (ws, msg) => {
   switch (msg.type) {
@@ -274,6 +431,28 @@ const handleBisoWsMessage = (ws, msg) => {
     default: break;
   }
 };
+// Foco do caderno: lista os focos possíveis (Geral + projetos do biso, lidos do
+// disco) e troca o CWD da sessão do chat. Fora do namespace /biso (body parseado).
+app.get('/biso-chat/project', requireAuth, (_req, res) => {
+  const projects = [{ id: 'geral', name: 'Geral', desc: 'sem projeto em foco' }]
+    .concat(readBisoProjects().map((p) => ({ id: p.id, name: p.name, desc: p.desc || '' })));
+  res.json({ current: readChatFocus(), cwd: resolveBisoCwd(), projects });
+});
+app.get('/biso-chat/lang', requireAuth, (_req, res) => res.json({ lang: readChatLang() }));
+app.post('/biso-chat/lang', requireAuth, (req, res) => {
+  const lang = String((req.body && req.body.lang) || '');
+  if (lang !== 'pt' && lang !== 'en') return res.status(400).json({ error: 'lang deve ser pt ou en' });
+  try { writeChatLang(lang); } catch (e) { return res.status(500).json({ error: e.message }); }
+  res.json({ ok: true, lang });
+});
+app.post('/biso-chat/project', requireAuth, (req, res) => {
+  const id = String((req.body && req.body.id) || '');
+  const ok = id === 'geral' || readBisoProjects().some((p) => p.id === id);
+  if (!ok) return res.status(400).json({ error: 'projeto desconhecido: ' + id });
+  try { writeChatFocus(id); } catch (e) { return res.status(500).json({ error: e.message }); }
+  res.json({ ok: true, current: id, cwd: resolveBisoCwd() });
+});
+
 // Chips de follow-up p/ o Caderno: um claude -p curto e barato propõe 2-3 próximas
 // mensagens após cada resposta. Best-effort — falha vira lista vazia, sem erro.
 // Fora do namespace /biso (logo tem o body parseado pelo express.json).
@@ -292,6 +471,76 @@ app.post('/biso-followups', requireAuth, async (req, res) => {
   } catch { res.json({ suggestions: [] }); }
 });
 
+// Lançamento por VOZ no finance: fala ditada → Haiku extrai a transação AUVP.
+// SÓ parseia — a criação usa o POST /finance/tx existente, depois que a usuária
+// confirma o resumo na tela ("mercado sessenta e dois reais" → 62 · custo-fixo).
+app.post('/finance/voz', requireAuth, async (req, res) => {
+  const texto = String((req.body && req.body.texto) || '').trim().slice(0, 500);
+  if (!texto) return res.status(400).json({ error: 'texto vazio' });
+  // datas LOCAIS — toISOString é UTC e vira o dia às 21h BRT (bug real 2026-07-13)
+  const localISO = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const hoje = localISO(new Date());
+  const prompt = `Extraia UMA transação financeira da fala ditada abaixo (pt-BR).
+
+[Fala]
+${texto}
+
+Regras:
+- "kind": "expense" (gasto/aporte) ou "income" (recebimento). Padrão: expense.
+- "amount": número em reais ("sessenta e dois reais" → 62). OBRIGATÓRIO.
+- "category": 1-2 palavras minúsculas (mercado, ifood, farmácia, salário…).
+- "bucket": UM de custo-fixo|conforto|liberdade|metas|prazeres|conhecimento — só p/ expense. Guia: mercado/aluguel/contas→custo-fixo · restaurante/lazer→prazeres · curso/livro→conhecimento · aporte/investimento→liberdade · upgrade não essencial→conforto · objetivo específico→metas. Omita se income.
+- "desc": descrição curta (máx 8 palavras) com o contexto restante.
+- "date": "AAAA-MM-DD" só se a fala citar dia; hoje é ${hoje}, ontem foi ${localISO(new Date(Date.now() - 864e5))}; "dia 5" = dia 5 do mês corrente.
+- "pending": true só se indicar provisão/futuro ("vou pagar", "a receber").
+Responda APENAS JSON: {"kind":"expense","amount":62,"category":"mercado","bucket":"custo-fixo","desc":"compras da semana"}`;
+  try {
+    const out = await llm.microTask('finance-voz', prompt, { maxTokens: 200 });
+    let parsed = {}; const m = out && out.match(/\{[\s\S]*\}/);
+    if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
+    if (!(Number(parsed.amount) > 0)) return res.status(422).json({ error: 'não entendi o valor — repita com o valor em reais', parsed });
+    res.json({ ok: true, parsed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Previsão ao vivo do caderno: rascunho PARCIAL → % de certeza da intenção +
+// complementos prováveis (chips no write pad). v1 = LLM via microTask (Haiku
+// quando há chave; senão claude -p) condicionado nas últimas mensagens do
+// usuário — RF/redes locais exigiriam corpus que ainda não existe. Best-effort:
+// qualquer falha vira {confidence:0, completions:[]}, nunca erro na UI.
+app.post('/biso-predict', requireAuth, async (req, res) => {
+  const draft = String((req.body && req.body.draft) || '').slice(0, 2000);
+  const history = (Array.isArray(req.body && req.body.history) ? req.body.history : [])
+    .map((s) => String(s || '').slice(0, 300)).filter(Boolean).slice(-8);
+  const nWords = draft.trim().split(/\s+/).filter(Boolean).length;
+  if (nWords < 3) return res.json({ confidence: 0, completions: [] });
+  // Rascunho curto (<8 palavras) NÃO recebe histórico nem few-shot: herdar
+  // assunto de outra conversa gerava completions fora de contexto (vídeo
+  // 2026-07-14: chips de GitHub, a 45%, numa pergunta de culinária). Com pouco
+  // texto, o assunto tem que vir do próprio rascunho.
+  const rich = nWords >= 8;
+  const aceitas = rich ? readMetrics('previsao-aceita', 3) : [];
+  const prompt = `Você observa alguém digitando uma mensagem AINDA INCOMPLETA para um agente de código (Claude Code) num caderno de iPad.
+${rich && history.length ? `\n[Mensagens recentes do mesmo usuário — só ESTILO; não herde o assunto delas]\n${history.map((h) => '- ' + h.replace(/\n+/g, ' ')).join('\n')}\n` : ''}${aceitas.length ? `\n[Complementos que este usuário aceitou antes]\n${aceitas.map((a) => `- "${a.draft || ''}" → "${a.completion || ''}"`).join('\n')}\n` : ''}
+[Rascunho parcial]
+${draft}
+
+Estime:
+1. "confidence": inteiro 0-100 — quão previsível já está a INTENÇÃO completa (0 = começo ambíguo, 100 = intenção óbvia). Se o rascunho ainda não revela o ASSUNTO, confidence ≤ 25.
+2. "completions": 2 a 3 CONTINUAÇÕES prováveis do rascunho (apenas o texto que falta, máx ~10 palavras cada, no idioma do rascunho, distintas entre si). Devem seguir o assunto do PRÓPRIO rascunho — nunca de conversas anteriores.
+
+Responda APENAS o JSON, sem markdown: {"confidence": 62, "completions": ["...", "..."]}`;
+  try {
+    const out = await llm.microTask('biso-predict', prompt, { maxTokens: 300, timeoutMs: 20000 });
+    let obj = {}; const m = out && out.match(/\{[\s\S]*\}/);
+    if (m) { try { obj = JSON.parse(m[0]); } catch {} }
+    const confidence = Math.max(0, Math.min(100, Math.round(Number(obj.confidence) || 0)));
+    const completions = (Array.isArray(obj.completions) ? obj.completions : [])
+      .filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim().slice(0, 120)).slice(0, 3);
+    res.json({ confidence, completions });
+  } catch { res.json({ confidence: 0, completions: [] }); }
+});
+
 // === vault Obsidian (frontend de escrita "Notas") =========================
 // Acesso de arquivos confinado ao vault, independente do projeto ativo do biso.
 const obsidianDir = () => {
@@ -305,6 +554,17 @@ const obsidianDir = () => {
 };
 const OBSIDIAN_DIR = obsidianDir();
 const resolveInsideVault = makeResolveInsideCwd(() => OBSIDIAN_DIR);
+// Gravamos no mesmo vault que o Obsidian pode estar editando → tratamos como um 2º
+// cliente de sync. hash = token de versão (OCC); escrita atômica = leitor concorrente
+// nunca vê arquivo parcial. Ver memória vault-write-safety.
+const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+function atomicWrite(abs, content) {
+  const dir = path.dirname(abs);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = path.join(dir, '.' + path.basename(abs) + '.tmp-' + process.pid + '-' + Date.now());
+  fs.writeFileSync(tmp, content, 'utf8');
+  fs.renameSync(tmp, abs);   // rename intra-FS é atômico (truncate-then-write não é)
+}
 app.get('/vault/list', requireAuth, (req, res) => {
   try {
     const rel = req.query.path || '.';
@@ -321,19 +581,117 @@ app.get('/vault/file', requireAuth, (req, res) => {
     const rel = req.query.path;
     if (!rel) return res.status(400).json({ error: 'path obrigatório' });
     const abs = resolveInsideVault(rel);
-    res.json({ path: rel, content: fs.readFileSync(abs, 'utf8'), mtimeMs: fs.statSync(abs).mtimeMs });
+    const content = fs.readFileSync(abs, 'utf8');
+    res.json({ path: rel, content, hash: sha256(content), mtimeMs: fs.statSync(abs).mtimeMs });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.post('/vault/write', requireAuth, (req, res) => {
   try {
     const rel = req.body && req.body.path;
     const content = req.body && req.body.content;
+    const baseHash = req.body && req.body.baseHash;   // OCC: hash que o cliente leu ao abrir
     if (!rel || typeof content !== 'string') return res.status(400).json({ error: 'path+content obrigatórios' });
     const abs = resolveInsideVault(rel);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, content, 'utf8');
-    res.json({ ok: true, path: rel, mtimeMs: fs.statSync(abs).mtimeMs });
+    // concorrência otimista: se o conteúdo no disco difere do que o cliente leu
+    // (ex.: o Obsidian gravou por baixo), não sobrescreve — 412, p/ não perder a
+    // outra versão. baseHash ausente = escrita nova/forçada (sem checagem).
+    if (baseHash && fs.existsSync(abs)) {
+      const cur = sha256(fs.readFileSync(abs, 'utf8'));
+      if (cur !== baseHash) return res.status(412).json({ error: 'O arquivo mudou no disco (Obsidian?). Reabra a nota para não perder a outra versão.' });
+    }
+    atomicWrite(abs, content);
+    res.json({ ok: true, path: rel, hash: sha256(content), mtimeMs: fs.statSync(abs).mtimeMs });
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+// Arquivo BRUTO do vault (binário) p/ embutir no Canvas: <img>/<iframe> de imagem/PDF.
+// Auth por cookie ou ?token= (img/iframe não mandam header). Confinado ao vault.
+const VAULT_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.pdf': 'application/pdf', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.md': 'text/markdown; charset=utf-8', '.txt': 'text/plain; charset=utf-8' };
+app.get('/vault/raw', requireAuth, (req, res) => {
+  try {
+    const rel = req.query.path; if (!rel) return res.status(400).send('path obrigatório');
+    const abs = resolveInsideVault(rel);
+    res.setHeader('content-type', VAULT_MIME[path.extname(abs).toLowerCase()] || 'application/octet-stream');
+    res.setHeader('cache-control', 'private, max-age=60');
+    fs.createReadStream(abs).on('error', () => { if (!res.headersSent) res.status(404).end(); }).pipe(res);
+  } catch (e) { res.status(400).send(e.message); }
+});
+// Escreve um arquivo BINÁRIO no vault (ex.: recorte PNG do anotador de PDF → cartão no Canvas).
+// Corpo bruto (não-JSON); confinado ao vault; escrita atômica. Só extensões de mídia conhecidas.
+app.post('/vault/raw-write', requireAuth, express.raw({ type: '*/*', limit: '25mb' }), (req, res) => {
+  try {
+    const rel = req.query.path; if (!rel) return res.status(400).json({ error: 'path obrigatório' });
+    const ext = path.extname(rel).toLowerCase();
+    if (!['.png', '.jpg', '.jpeg', '.webp'].includes(ext)) return res.status(400).json({ error: 'extensão não permitida' });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'corpo vazio' });
+    const abs = resolveInsideVault(rel);
+    const dir = path.dirname(abs); fs.mkdirSync(dir, { recursive: true });
+    const tmp = path.join(dir, '.' + path.basename(abs) + '.tmp-' + process.pid + '-' + Date.now());
+    fs.writeFileSync(tmp, req.body); fs.renameSync(tmp, abs);
+    res.json({ ok: true, path: rel });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// IA do Canvas: claude -p headless, best-effort, request/response simples.
+// Modos que criam cartões: brainstorm (usa 'topic') · expand/summarize (usam
+// 'context') → { cards:[...], links:[[i,j]] }. Modos que operam no QUADRO:
+//   organize   { cards:[{i,text}] }        → { groups:[{label, cards:[i]}] }
+//   synthesize { context: quadro textual } → { note: markdown }
+//   tasks      { context }                 → { tasks:["..."] }
+app.post('/canvas-ai', requireAuth, async (req, res) => {
+  const mode = String((req.body && req.body.mode) || 'brainstorm');
+  const topic = String((req.body && req.body.topic) || '').slice(0, 2000);
+  const context = String((req.body && req.body.context) || '').slice(0, 12000);
+  const run = (prompt, ms) => headless.runClaudeHeadless(prompt, OBSIDIAN_DIR, ms || 40000, { feature: 'canvas-ai' });
+  const firstJson = (out) => { const m = out && out.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch {} } return {}; };
+  try {
+    if (mode === 'organize') {
+      const inCards = (Array.isArray(req.body.cards) ? req.body.cards : []).slice(0, 80)
+        .map((c) => ({ i: c.i | 0, text: String(c.text || '').slice(0, 280) }));
+      if (inCards.length < 3) return res.json({ groups: [] });
+      const lista = inCards.map((c) => `${c.i}: ${c.text.replace(/\n+/g, ' ')}`).join('\n');
+      const prompt = `Agrupe os cartões de um quadro de ideias em 2 a 6 TEMAS coerentes. Cada cartão pertence a no máximo um tema; rótulos curtos (1-3 palavras, português).\n\n[Cartões]\n${lista}\n\nResponda APENAS JSON, sem markdown: {"groups":[{"label":"Tema","cards":[0,3,5]}]} — números são os índices dos cartões.`;
+      const obj = firstJson(await run(prompt));
+      const valid = new Set(inCards.map((c) => c.i));
+      const groups = (Array.isArray(obj.groups) ? obj.groups : [])
+        .map((g) => ({ label: String(g.label || '').slice(0, 40) || 'Tema', cards: (Array.isArray(g.cards) ? g.cards : []).filter((n) => Number.isInteger(n) && valid.has(n)) }))
+        .filter((g) => g.cards.length).slice(0, 6);
+      return res.json({ groups });
+    }
+    if (mode === 'synthesize') {
+      const prompt = `Transforme o quadro de ideias abaixo numa nota markdown BEM estruturada, em português: um título (# ), seções por tema, bullets concisos e, se fizer sentido, uma seção final "## Próximos passos". NÃO invente conteúdo que não esteja no quadro.\n\n[Quadro]\n${context}\n\nResponda APENAS o markdown da nota, sem cercas de código nem comentários.`;
+      let out = String(await run(prompt, 60000) || '').trim();
+      out = out.replace(/^```(?:markdown|md)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+      return res.json({ note: out });
+    }
+    if (mode === 'ask') {
+      // ✦ Perguntar no cartão: 'chain' = corrente de cartões-ancestrais (histórico
+      // da conversa espacial), 'card' = conteúdo do cartão, 'question' opcional.
+      const chain = String((req.body && req.body.chain) || '').slice(0, 9000);
+      const card = String((req.body && req.body.card) || '').slice(0, 3000);
+      const question = String((req.body && req.body.question) || '').slice(0, 1000);
+      const prompt = `Você responde DENTRO de um quadro de ideias (canvas): sua resposta vira um cartão ligado ao atual.${chain ? `\n\n[Corrente de cartões até aqui — do mais antigo ao mais recente]\n${chain}` : ''}\n\n[Cartão atual]\n${card}\n\n[Pergunta]\n${question || 'Desenvolva/responda o conteúdo do cartão atual.'}\n\nResponda em português, CONCISO (cabe num cartão: 3-8 frases ou bullets curtos), markdown simples, sem título e sem cercas de código.`;
+      let out = String(await run(prompt, 60000) || '').trim();
+      out = out.replace(/^```(?:markdown|md)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+      return res.json({ answer: out });
+    }
+    if (mode === 'tasks') {
+      const prompt = `Extraia do quadro de ideias abaixo as tarefas ACIONÁVEIS (frases imperativas curtas, máx ~10 palavras cada, português). Inclua SÓ o que é de fato uma ação a executar — ideias soltas não viram tarefa. Máximo 10.\n\n[Quadro]\n${context}\n\nResponda APENAS um array JSON de strings, nada mais.`;
+      const out = await run(prompt);
+      let arr = []; const m = out && out.match(/\[[\s\S]*\]/); if (m) { try { arr = JSON.parse(m[0]); } catch {} }
+      arr = (Array.isArray(arr) ? arr : []).filter((s) => typeof s === 'string' && s.trim()).map((s) => s.trim().slice(0, 140)).slice(0, 10);
+      return res.json({ tasks: arr });
+    }
+    // modos que criam cartões (brainstorm/expand/summarize)
+    let instr;
+    if (mode === 'expand') instr = `Expanda as ideias abaixo em 3 a 5 cartões curtos e conectados (cada um 1 frase objetiva).\n\n[Ideias]\n${context}`;
+    else if (mode === 'summarize') instr = `Resuma o conteúdo abaixo em 1 a 3 cartões curtos (cada um 1 frase).\n\n[Conteúdo]\n${context}`;
+    else instr = `Faça um brainstorm sobre "${topic}". Gere de 4 a 7 cartões curtos (cada um 1 frase) e proponha ligações entre eles.`;
+    const prompt = `${instr}\n\nResponda APENAS um JSON, sem markdown nem comentários, no formato: {"cards":["texto1","texto2"],"links":[[0,1],[1,2]]} — links são pares de índices 0-based de cartões conectados.`;
+    const obj = firstJson(await run(prompt));
+    const cards = Array.isArray(obj.cards) ? obj.cards.filter((s) => typeof s === 'string' && s.trim()).slice(0, 8) : [];
+    const links = Array.isArray(obj.links) ? obj.links.filter((l) => Array.isArray(l) && l.length === 2 && Number.isInteger(l[0]) && Number.isInteger(l[1])) : [];
+    res.json({ cards, links });
+  } catch (e) { res.status(500).json({ error: 'IA indisponível' }); }
 });
 
 // Claude-assist das Notas: sessão própria no CWD do vault → enxerga o CLAUDE.md/
@@ -362,7 +720,7 @@ const handleVaultWsMessage = (ws, msg) => {
   }
 };
 
-console.log(`[bisa] ponte biso → ${BISO_URL} (chat → projeto ativo: ${resolveBisoCwd()})${BISO_TOKEN ? '' : ' [SEM TOKEN — confira BISO_DIR/.env]'}`);
+console.log(`[bisa] ponte biso → ${BISO_URL} (caderno → foco '${readChatFocus()}': ${resolveBisoCwd()})${BISO_TOKEN ? '' : ' [SEM TOKEN — confira BISO_DIR/.env]'}`);
 console.log(`[bisa] vault obsidian (Notas) → ${OBSIDIAN_DIR}`);
 
 // === HTTP + WS =============================================================
@@ -383,6 +741,7 @@ server.on('upgrade', (req, socket, head) => {
   if (!role) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return; }
   const pathName = new URL(req.url, 'http://x').pathname;
   if (pathName.startsWith('/sentinel')) return sentinel.upgrade(req, socket, head); // live view do Frigate
+  if (pathName.startsWith('/stt')) return stt.upgrade(req, socket, head);           // ditado (Whisper local)
   if (pathName !== '/ws') { socket.destroy(); return; }
   wss.handleUpgrade(req, socket, head, (ws) => { ws._role = role; wss.emit('connection', ws, req); });
 });

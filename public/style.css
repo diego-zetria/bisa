@@ -23,13 +23,115 @@
   --nav-h: 64px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+/* Aparência por aparelho (Ajustes → Aparência): sem data-appearance segue o
+   sistema; "light"/"dark" no <html> fixam o tema (a esposa força o claro num
+   iPad em dark). Aplicado por script inline no <head> antes do 1º paint. */
+:root[data-appearance="dark"] {
+  --bg:#1b1e18; --surface:#23271f; --surface-2:#2b2f26; --ink:#ece9e3;
+  --ink-soft:#a6ab9c; --line:#363b30; --accent-soft:#2e3328;
+  --warn:#e6c570; --warn-soft:#3a3214;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-appearance="light"]):not([data-appearance="excel"]) {
     --bg:#1b1e18; --surface:#23271f; --surface-2:#2b2f26; --ink:#ece9e3;
     --ink-soft:#a6ab9c; --line:#363b30; --accent-soft:#2e3328;
     --warn:#e6c570; --warn-soft:#3a3214;
   }
 }
+/* Aparência "Planilha" (Excel) — pedido da Gabriela (2026-07-10): o creme não
+   era branco o bastante. Folha branca DE VERDADE, texto quase-preto, verde
+   Office no lugar do olive, vermelho contábil, cantos mais "célula". */
+:root[data-appearance="excel"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f3f5f3;
+  --ink: #1f1f1f;
+  --ink-soft: #5f6368;
+  --line: #d4d7d4;         /* cinza de gridline */
+  --primary: #107c41;      /* verde do ribbon do Excel */
+  --primary-ink: #ffffff;
+  --positive: #107c41;
+  --negative: #c00000;     /* vermelho contábil */
+  --accent-soft: #e2efda;  /* preenchimento verde-claro clássico de célula */
+  --warn: #7f6000;
+  --warn-soft: #fff2cc;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(0,0,0,.07);
+}
+/* a folha: gridlines fantasma no fundo — os cards brancos assentam por cima */
+:root[data-appearance="excel"] body {
+  background-image:
+    linear-gradient(to right, rgba(31,31,31,.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(31,31,31,.05) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+/* ---- tabelas realçadas do markdown (md-tables.js) ----
+   Barras de dados atrás dos números (ancoradas à esquerda, número à direita —
+   o modelo mental do Excel), zebra sutil, máximo em negrito + barra mais forte.
+   Cores por indireção --tab-*: cada tema (e o caderno do biso) remapeia. */
+table.nbtab { --tab-accent: var(--primary); --tab-neg: var(--negative); --tab-pos: var(--positive);
+  --tab-head: var(--surface-2); --tab-ink: var(--ink); --tab-line: var(--line);
+  border-collapse: collapse; }
+.nbtab thead th { background: var(--tab-head); text-align: left; padding: 8px 12px;
+  font-size: .82em; letter-spacing: .04em; }
+.nbtab td { padding: 7px 12px; border-top: 1px solid var(--tab-line); }
+.nbtab tbody tr:nth-child(even) { background: color-mix(in srgb, var(--tab-ink) 3%, transparent); }
+.nbtab th.nbtab-num, .nbtab td.nbtab-num { text-align: right; font-variant-numeric: tabular-nums; }
+.nbtab td.nbtab-num { position: relative; }
+.nbtab .nbtab-val { position: relative; z-index: 1; }
+.nbtab-bar { position: absolute; left: 4px; top: 18%; bottom: 18%; z-index: 0;
+  background: color-mix(in srgb, var(--tab-accent) 16%, transparent);
+  border-radius: 3px; min-width: 2px; pointer-events: none; }
+.nbtab td.nbtab-max .nbtab-bar { background: color-mix(in srgb, var(--tab-accent) 30%, transparent); }
+.nbtab td.nbtab-max .nbtab-val { font-weight: 700; }
+.nbtab .nbtab-neg { color: var(--tab-neg); }
+.nbtab .nbtab-pos { color: var(--tab-pos); }
+
+/* ---- gráficos inline dos fences ```chart (md-charts.js) ----
+   Mesma indireção --tab-* das tabelas; SVG pinta via classes nbc-*. */
+.nbchart { --tab-accent: var(--primary); --tab-ink: var(--ink); --tab-soft: var(--ink-soft);
+  --tab-line: var(--line);
+  margin: 10px 0 14px; padding: 12px 14px; max-width: 560px;
+  border: 1px solid var(--tab-line); border-radius: var(--radius-sm); }
+.nbchart figcaption { font-size: .78rem; font-weight: 600; letter-spacing: .04em;
+  color: var(--tab-soft); margin-bottom: 10px; }
+.nbchart .nbc-fill { fill: var(--tab-accent); }
+.nbchart .nbc-stroke { stroke: var(--tab-accent); }
+.nbchart .nbc-grid { stroke: var(--tab-line); stroke-width: 1; }
+.nbchart svg text { fill: var(--tab-ink); font-family: inherit; }
+.nbchart svg text.nbc-soft { fill: var(--tab-soft); }
+.nbchart svg text.nbc-num { font-variant-numeric: tabular-nums; }
+.nbchart-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.nbchart-legend { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
+.nbchart-legend div { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--tab-ink); }
+.nbchart-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--tab-accent); flex-shrink: 0; }
+.nbchart-legend span { flex: 1; }
+.nbchart-legend b { font-variant-numeric: tabular-nums; }
+.nbstat { display: flex; gap: 10px; flex-wrap: wrap; }
+.nbstat > div { flex: 1 1 120px; border-left: 3px solid var(--tab-accent);
+  background: color-mix(in srgb, var(--tab-accent) 7%, transparent);
+  border-radius: var(--radius-sm); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; }
+.nbstat b { font-size: 1.35rem; line-height: 1.2; color: var(--tab-ink); font-variant-numeric: tabular-nums; }
+.nbstat span { font-size: .76rem; letter-spacing: .04em; color: var(--tab-soft); }
+
+/* ---- nível 3: ordenar por toque + expandir gráfico ---- */
+.nbtab thead th.nbtab-sort { cursor: pointer; -webkit-user-select: none; user-select: none; }
+.nbtab thead th.nbtab-sort:not([aria-sort])::after { content: ' ⇅'; opacity: .35; font-size: .85em; }
+.nbtab thead th[aria-sort="ascending"]::after { content: ' ▲'; font-size: .7em; }
+.nbtab thead th[aria-sort="descending"]::after { content: ' ▼'; font-size: .7em; }
+.nbchart { --tab-card: var(--surface); }
+.nbchart:has(svg) { cursor: zoom-in; }
+.nbchart-ov { position: fixed; inset: 0; z-index: 1300; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom));
+  cursor: zoom-out; animation: nbov-in .18s ease-out; }
+.nbchart-ov .nbchart { width: min(92vw, 900px); max-height: 88vh; overflow: auto;
+  margin: 0; padding: 20px 24px; background: var(--tab-card);
+  box-shadow: 0 18px 60px rgba(0,0,0,.4); }
+@keyframes nbov-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .nbchart-ov { animation: none; } }
 /* touch-action: manipulation em tudo (não herda) — mata o atraso do double-tap
    no iPad; superfícies que precisam de outro gesto sobrescrevem (ex: handles de
    arrastar usam touch-action:none, que vence por especificidade). */

@@ -122,19 +122,30 @@
 
   // ── Estado ───────────────────────────────────────────────────────────────
   let root, host, editor, nameEl, statusEl;
-  let currentPath = null, dirty = false;
+  let currentPath = null, dirty = false, baseHash = null;
   let inkLib = null;
   // Claude-assist
   let assistStream = null, assistBusy = false, assistUnsub = null, naMode = null;
   let naPop = null, naCard = null, naWrite = null, naSendBtn = null, naResEl = null, askBtn = null;
-  // histórico desfazer/refazer
-  let histStack = [], histIdx = -1, histTimer = null;
 
   // ── Editor (ink-mde) ──────────────────────────────────────────────────────
   async function loadInk() { if (!inkLib) inkLib = await import('/vendor/ink-mde.js'); return inkLib.ink; }
   function mdSource() { try { return editor ? editor.getDoc() : ''; } catch { return ''; } }
-  function setDoc(md) { if (editor) { try { editor.update(md || ''); } catch {} } }
-  function onChange() { dirty = true; updateStatus(); histSchedule(); }
+  // Recria o editor com um doc — dá um histórico CM6 LIMPO por arquivo (dono único
+  // do undo: o próprio CM6). Usado ao abrir/criar/recarregar. Evita o anti-padrão de
+  // um stack de snapshots paralelo brigando com o history() nativo.
+  function buildEditor(doc) {
+    if (!inkLib) return;
+    if (editor) { try { editor.destroy(); } catch {} editor = null; }
+    host.innerHTML = '';
+    editor = inkLib.ink(host, {
+      doc: doc || '',
+      interface: { appearance: appFor(prefs.paper), toolbar: true, autocomplete: false, lists: true },
+      hooks: { afterUpdate: () => onChange() },
+    });
+    applyPrefs();
+  }
+  function onChange() { dirty = true; updateStatus(); }
 
   function wordCount() { const t = mdSource().trim(); return t ? t.split(/\s+/).length : 0; }
   function updateStatus() {
@@ -170,19 +181,23 @@
   async function loadNote(rel) {
     try {
       const data = await BISA.api('/vault/file?path=' + encodeURIComponent(rel));
-      setDoc(data.content || '');
-      currentPath = rel; histReset(data.content || '');
+      currentPath = rel; baseHash = data.hash || null;
+      buildEditor(data.content || '');   // editor novo → histórico CM6 limpo p/ esta nota
       Promise.resolve().then(() => { dirty = false; updateStatus(); });
     } catch (e) { BISA.toast('Erro ao abrir: ' + e.message); }
   }
   async function save() {
     const content = mdSource();
-    if (!currentPath) { promptName((name) => doSave(name, content)); return; }
-    doSave(currentPath, content);
+    if (!currentPath) { promptName((name) => doSave(name, content, null)); return; }   // salvar-como: sem OCC (caminho novo)
+    doSave(currentPath, content, baseHash);
   }
-  async function doSave(rel, content) {
-    try { const r = await BISA.api('/vault/write', { method: 'POST', json: { path: rel, content } }); currentPath = r.path; dirty = false; updateStatus(); BISA.toast('Salvo ✓'); }
-    catch (e) { BISA.toast('Erro ao salvar: ' + e.message); }
+  // occHash = hash lido ao abrir (concorrência otimista). Em 412 (o Obsidian gravou
+  // por baixo) o servidor recusa e avisamos — sem sobrescrever a outra versão.
+  async function doSave(rel, content, occHash) {
+    try {
+      const r = await BISA.api('/vault/write', { method: 'POST', json: { path: rel, content, baseHash: occHash || undefined } });
+      currentPath = r.path; baseHash = r.hash || null; dirty = false; updateStatus(); BISA.toast('Salvo ✓');
+    } catch (e) { BISA.toast('Erro ao salvar: ' + e.message); }
   }
   function promptName(cb) {
     const ov = elx('div', 'notas-ov');
@@ -219,13 +234,20 @@
     document.body.appendChild(ov);
   }
 
-  // ── Desfazer / Refazer (snapshots do markdown) ────────────────────────────
-  function histReset(md) { histStack = [md || '']; histIdx = 0; }
-  function histDoRecord() { const md = mdSource(); if (histIdx >= 0 && histStack[histIdx] === md) return; histStack = histStack.slice(0, histIdx + 1); histStack.push(md); if (histStack.length > 80) histStack.shift(); histIdx = histStack.length - 1; }
-  function histSchedule() { clearTimeout(histTimer); histTimer = setTimeout(histDoRecord, 600); }
-  function histFlush() { clearTimeout(histTimer); histDoRecord(); }
-  function undo() { histFlush(); if (histIdx > 0) { histIdx--; setDoc(histStack[histIdx]); dirty = true; updateStatus(); BISA.toast('Desfeito'); } else BISA.toast('Nada para desfazer'); }
-  function redo() { if (histIdx < histStack.length - 1) { histIdx++; setDoc(histStack[histIdx]); dirty = true; updateStatus(); BISA.toast('Refeito'); } else BISA.toast('Nada para refazer'); }
+  // ── Desfazer / Refazer (history NATIVO do CM6) ────────────────────────────
+  // Um único dono do undo: o CodeMirror 6 (history() + keymap Mod-z/Mod-y já ativos
+  // no ink-mde). Os botões ↶/↷ disparam o atalho nativo no contenteditable do CM6
+  // (a API pública do ink-mde não expõe undo/redo nem a EditorView). O Cmd-Z por
+  // teclado de hardware continua funcionando pelo mesmo caminho — sem dessincronizar.
+  function cmKey(opts) {
+    const cd = host && host.querySelector('.cm-content');
+    if (!cd) return;
+    cd.focus();
+    cd.dispatchEvent(new KeyboardEvent('keydown', Object.assign(
+      { key: 'z', code: 'KeyZ', keyCode: 90, which: 90, bubbles: true, cancelable: true }, opts)));
+  }
+  function undo() { cmKey({ metaKey: true }); }              // Mod-z
+  function redo() { cmKey({ metaKey: true, shiftKey: true }); } // Mod-Shift-z
 
   // ── Claude-assist (popover de comandos diretos; sessão claude -p no vault) ──
   function noteContext() { const t = mdSource().trim(); return t ? t.slice(0, 8000) : ''; }
@@ -261,7 +283,7 @@
     let reload = false, kind = meta.kind || 'text';
     if (meta.editFile) {
       if (!currentPath) { BISA.toast('Salve a nota antes de pedir uma edição.'); return; }
-      if (dirty) await doSave(currentPath, mdSource());
+      if (dirty) await doSave(currentPath, mdSource(), baseHash);
       prompt = `${TERSE} Edite DIRETAMENTE o arquivo "${currentPath}" no vault conforme: ${meta.userText}. Use suas ferramentas de edição e resuma em 1 linha o que mudou.`;
       reload = true; kind = 'edit';
     }
@@ -354,21 +376,16 @@
       buildAssist();
 
       // editor ink-mde (CM6) — live preview de verdade
-      loadInk().then((ink) => {
-        host.innerHTML = '';
-        editor = ink(host, {
-          doc: '',
-          interface: { appearance: appFor(prefs.paper), toolbar: true, autocomplete: false, lists: true },
-          hooks: { afterUpdate: () => onChange() },
-        });
-        applyPrefs(); histReset(''); dirty = false; updateStatus();
+      loadInk().then(() => {
+        buildEditor('');
+        dirty = false; updateStatus();
       }).catch((e) => { host.innerHTML = '<div class="notas-loading">Falha ao carregar o editor: ' + esc(e.message) + '</div>'; });
     },
     unmount() {
       if (assistUnsub) { assistUnsub(); assistUnsub = null; }
       if (editor) { try { editor.destroy(); } catch {} editor = null; }
       document.querySelectorAll('.notas-ov, .na-pop').forEach((o) => o.remove());
-      clearTimeout(histTimer); histStack = []; histIdx = -1;
+      baseHash = null;
       root = host = nameEl = statusEl = null;
       naPop = naCard = naWrite = naSendBtn = naResEl = askBtn = null;
       assistStream = null; assistBusy = false; naMode = null;

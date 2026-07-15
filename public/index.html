@@ -17,6 +17,8 @@
      cai no serif local na hora, sem travar a tela inicial. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&display=swap" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="/style.css">
+<script>/* aparência salva antes do 1º paint (evita flash claro↔escuro) */
+try { var _ap = localStorage.getItem('bisa_appearance'); if (_ap) document.documentElement.dataset.appearance = _ap; } catch (e) {}</script>
 <link rel="stylesheet" href="/biso.css">
 <link rel="stylesheet" href="/gate.css">
 <link rel="stylesheet" href="/gates/monolith.css">
@@ -46,6 +48,7 @@
     <button data-route="world"><span class="ic">🌐</span>Mundo</button>
     <button data-route="chat"><span class="ic">💬</span>Claude</button>
     <button data-route="biso"><span class="ic">🛠️</span>Biso</button>
+    <button data-route="novela-shorts"><span class="ic">🎬</span>Novela</button>
   </nav>
 </div>
 
@@ -56,6 +59,8 @@
 <script src="/vendor/Sortable.min.js"></script>
 <script src="/vendor/force-graph.min.js"></script>
 
+<script src="/md-tables.js"></script>
+<script src="/md-charts.js"></script>
 <script src="/app.js"></script>
 <script src="/gate-core.js"></script>
 <script src="/gates/monolith.js"></script>
@@ -69,10 +74,18 @@
 <script src="/screens/chat.js"></script>
 <script src="/screens/finance.js"></script>
 <script src="/screens/sentinel.js"></script>
+<script src="/screens/media.js"></script>
 <script src="/screens/ajustes.js"></script>
 <script src="/screens/notas.js"></script>
+<script src="/screens/pdf-annot.js"></script>
+<script src="/screens/img-annot.js"></script>
 <script src="/screens/canvas.js"></script>
+<script src="/screens/fit.js"></script>
+<script src="/screens/ditado.js"></script>
 <script src="/screens/biso.js"></script>
+<script src="/screens/slack.js"></script>
+<script src="/screens/ops.js"></script>
+<script src="/screens/novela-shorts.js"></script>
 <script src="/annotate.js"></script>
 <script>window.BISA && window.BISA.start && window.BISA.start();</script>
 </body>
