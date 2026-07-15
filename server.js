@@ -446,11 +446,16 @@ app.get('/biso-chat/project', requireAuth, (_req, res) => {
 // caderno). Caminho ABSOLUTO (vem do tool_use), confinado ao CWD do foco atual.
 app.get('/biso-chat/file', requireAuth, (req, res) => {
   const q = String(req.query.path || '');
-  const root = path.resolve(resolveBisoCwd());
+  // Canonicaliza ANTES de comparar: o projects.json do biso registra
+  // "/Users/…/Projects/x" (P maiúsculo) e o cwd real é "…/projects/x" —
+  // no APFS case-insensitive tudo funciona, menos um startsWith (403
+  // indevido, teste 2026-07-15). realpath resolve caixa E symlinks.
+  const canon = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  const root = canon(resolveBisoCwd());
   // O agente grava tanto com caminho absoluto quanto relativo ao cwd do foco
-  // (teste 2026-07-15: Write com "jira/tasks/…" → 403 indevido). Relativo
-  // resolve contra o foco, nunca contra o cwd do processo da bisa.
-  const abs = path.isAbsolute(q) ? path.resolve(q) : path.resolve(root, q);
+  // (Write com "jira/tasks/…" → relativo resolve contra o foco, nunca contra
+  // o cwd do processo da bisa).
+  const abs = canon(path.isAbsolute(q) ? q : path.join(resolveBisoCwd(), q));
   if (abs !== root && !abs.startsWith(root + path.sep)) {
     return res.status(403).json({ error: 'arquivo fora do foco atual do caderno' });
   }
