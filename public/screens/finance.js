@@ -250,6 +250,14 @@
       .fin-bud-subbtn:hover { background:var(--surface-2); color:var(--ink); }
       .fin-bud-subbtn.del.confirm { color:var(--negative); font-weight:700; font-size:.78rem; min-width:auto; padding:0 10px; }
       .fin-bud-subempty { color:var(--ink-soft); font-size:.84rem; padding:6px 2px; }
+      .fin-bud-subhead { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+        font-size:.8rem; font-weight:650; color:var(--ink-soft);
+        font-variant-numeric:tabular-nums; padding:2px 2px 6px; }
+      .fin-bud-subhead.neg { color:var(--negative); }
+      .fin-bud-subhead.free { color:var(--ink-soft); }
+      .fin-bud-setmeta { border:1px dashed var(--primary); background:var(--accent-soft);
+        color:var(--primary); border-radius:999px; font-size:.74rem; font-weight:600;
+        padding:3px 12px; min-height:30px; cursor:pointer; }
 
       .fin-value-pos { color:var(--positive); }
       .fin-value-neg { color:var(--negative); }
@@ -308,6 +316,24 @@
         border:1px solid var(--line); border-radius:var(--radius-sm); padding:11px 13px; width:100%;
         min-height:var(--tap); text-align:left; color:var(--ink); cursor:pointer; }
       .fin-amount-display.is-empty { color:var(--ink-soft); }
+      /* ── Agente de finanças (🤖): chat em overlay, veio da tela Ziggy ─── */
+      .fin-agent-overlay { position:fixed; inset:0; background:rgba(0,0,0,.38);
+        display:flex; align-items:center; justify-content:center; padding:20px; z-index:1000; }
+      .fin-agent-modal { background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow);
+        width:100%; max-width:560px; max-height:82vh; padding:16px; display:flex; flex-direction:column; gap:10px; }
+      .fin-agent-hint { font-size:.78rem; color:var(--ink-soft); line-height:1.45; }
+      .fin-agent-log { display:flex; flex-direction:column; gap:8px; overflow-y:auto; min-height:0; }
+      .fin-agent-m { max-width:88%; padding:9px 13px; border-radius:14px; font-size:.92rem; line-height:1.5; flex:0 0 auto; }
+      .fin-agent-m.u { align-self:flex-end; background:var(--primary); color:var(--primary-ink); border-bottom-right-radius:4px; }
+      .fin-agent-m.a { align-self:flex-start; background:var(--surface-2); border:1px solid var(--line); border-bottom-left-radius:4px; overflow-x:auto; }
+      .fin-agent-m.a p { margin:0 0 6px; }
+      .fin-agent-m.a table { border-collapse:collapse; font-size:.85rem; }
+      .fin-agent-m.a th, .fin-agent-m.a td { border:1px solid var(--line); padding:4px 7px; }
+      .fin-agent-ta { width:100%; border:2px solid var(--line); background:var(--surface-2);
+        border-radius:var(--radius-sm); padding:10px 14px; font-size:1rem; color:var(--ink);
+        outline:none; min-height:64px; resize:vertical; font-family:inherit; }
+      .fin-agent-ta:focus { border-color:var(--primary); }
+      .fin-agent-st { font-size:.8rem; color:var(--ink-soft); }
       /* ── Provisões do mês (anel de progresso) ─────────────────────────── */
       .fin-prov-row { display:flex; align-items:center; gap:14px; padding:12px 0;
         border-bottom:1px solid var(--line); }
@@ -317,6 +343,9 @@
         background:conic-gradient(var(--c) calc(var(--p)*1%), var(--surface-2) 0); }
       .fin-prov-ring.warn { --c:var(--warn); }
       .fin-prov-ring.over { --c:var(--negative); }
+      /* sem meta: anel cheio + valor gasto em destaque (maior/negrito) */
+      .fin-prov-sub.free { color:var(--ink-soft); }
+      .fin-prov-bigval { font-size:1.12rem; font-weight:700; color:var(--ink); }
       .fin-prov-ring::after { content:''; position:absolute; inset:6px; border-radius:50%;
         background:var(--surface); }
       .fin-prov-ring b { position:relative; z-index:1; font-size:.72rem; font-weight:800;
@@ -590,6 +619,8 @@
     _expandedBuckets: new Set(), // envelopes com os lançamentos abertos
     _billSort: 'unpaid', // ordenação do quadro de contas: unpaid|due|amount|bucket
     _manageMode: false, // tela "Gerenciar custos" aberta?
+    _dashMode: false, // board "Dashboards" aberto? (screens/finance-dash.js)
+    _agentLog: [], // histórico do chat do agente ({kind:'u'|'a', content, isMd})
 
     mount(el) {
       this._el = el;
@@ -665,6 +696,62 @@
       };
     },
 
+    // Agente de finanças (veio da tela Ziggy): chat com acesso real aos dados
+    // (leitura sempre; escrita sandboxada + confirmação em conversa no lado
+    // servidor, via POST /ziggy/finagent). O histórico fica em _agentLog p/
+    // sobreviver a fechar/reabrir o painel — o fluxo propõe → confirma é
+    // multi-turno e o usuário pode querer conferir a tela no meio.
+    _openAgentChat() {
+      if (document.querySelector('.fin-agent-overlay')) return;
+      const ov = elt('div', 'fin-agent-overlay');
+      const card = elt('div', 'fin-agent-modal');
+      card.innerHTML = `
+        <div class="section-title" style="margin:0">🤖 Agente de finanças</div>
+        <div class="fin-agent-hint">Ele lê profile.json e transactions.jsonl de verdade. Alterações: ele propõe → você confirma na conversa → ele edita (só na pasta do finance).</div>
+        <div class="fin-agent-log"></div>
+        <textarea class="fin-agent-ta" placeholder="pergunte ou peça ajustes… (ex: quanto sobrou no envelope do mercado? / aumenta a meta da luz pra 800)"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn ghost fin-agent-close" style="min-height:46px;">Fechar</button>
+          <span class="fin-agent-st" style="flex:1;text-align:right;"></span>
+          <button class="btn fin-agent-go" style="min-height:46px;">Enviar</button>
+        </div>`;
+      ov.appendChild(card);
+      document.body.appendChild(ov);
+      const log = card.querySelector('.fin-agent-log');
+      const ta = card.querySelector('.fin-agent-ta');
+      const go = card.querySelector('.fin-agent-go');
+      const st = card.querySelector('.fin-agent-st');
+      const bubble = (kind, content, isMd) => {
+        const b = elt('div', 'fin-agent-m ' + kind);
+        if (isMd) b.innerHTML = BISA.renderMarkdown(content); else b.textContent = content;
+        log.appendChild(b);
+        b.scrollIntoView({ block: 'nearest' });
+        return b;
+      };
+      for (const m of this._agentLog) bubble(m.kind, m.content, m.isMd);
+      const close = () => ov.remove();
+      ov.onclick = (e) => { if (e.target === ov) close(); };
+      card.querySelector('.fin-agent-close').onclick = close;
+      const send = async () => {
+        const q = ta.value.trim();
+        if (!q || go.disabled) return;
+        ta.value = '';
+        this._agentLog.push({ kind: 'u', content: q, isMd: false });
+        bubble('u', q, false);
+        go.disabled = true; st.textContent = 'consultando os dados… (~30-90s)';
+        try {
+          const d = await BISA.api('/ziggy/finagent', { method: 'POST', json: { text: q } });
+          this._agentLog.push({ kind: 'a', content: d.answer || '', isMd: true });
+          bubble('a', d.answer || '', true);
+          st.textContent = '';
+          this._render(true); // o agente pode ter editado os dados por baixo
+        } catch (e) { st.textContent = 'falhou: ' + e.message; }
+        go.disabled = false;
+      };
+      go.onclick = send;
+      ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') send(); });
+    },
+
     // preserveScroll=true mantém a posição de scroll (re-render após editar/pagar/
     // excluir, que ficam na mesma vista). Navegação de mês reseta ao topo.
     _render(preserveScroll) {
@@ -675,6 +762,16 @@
       el.innerHTML = '';
       el.classList.toggle('fin-noite', finTheme() === 'noite');
       el.classList.toggle('fin-rose', finTheme() === 'rose');
+
+      // Modo "Dashboards" — board próprio (screens/finance-dash.js).
+      if (this._dashMode && window.FIN_DASH) {
+        window.FIN_DASH.render(el, {
+          month: this._month,
+          dark: finTheme() === 'noite',
+          onExit: () => { this._dashMode = false; this._render(); },
+        });
+        return;
+      }
 
       // Modo "Gerenciar custos" — board próprio, fora da grade do mês.
       if (this._manageMode) {
@@ -722,7 +819,13 @@
       const vozBtn = elt('button', 'fin-month-btn', '🎤');
       vozBtn.setAttribute('aria-label', 'Lançar por voz');
       vozBtn.onclick = () => this._openVoiceTx();
-      monthNav.append(prevBtn, mlabel, nextBtn, vozBtn, themeBtn);
+      const dashBtn = elt('button', 'fin-month-btn', '📊');
+      dashBtn.setAttribute('aria-label', 'Dashboards');
+      dashBtn.onclick = () => { this._dashMode = true; this._render(); };
+      const agentBtn = elt('button', 'fin-month-btn', '🤖');
+      agentBtn.setAttribute('aria-label', 'Agente de finanças');
+      agentBtn.onclick = () => this._openAgentChat();
+      monthNav.append(prevBtn, mlabel, nextBtn, dashBtn, agentBtn, vozBtn, themeBtn);
       el.appendChild(monthNav);
 
       // Grade de duas colunas (iPad) / coluna única (celular).
@@ -919,8 +1022,8 @@
       const segKind = elt('div', 'fin-seg-kind');
       const expBtn = elt('button', state.kind === 'expense' ? 'on' : '', 'Gasto');
       const incBtn = elt('button', state.kind === 'income' ? 'on' : '', 'Receita');
-      expBtn.onclick = () => { state.kind = 'expense'; expBtn.classList.add('on'); incBtn.classList.remove('on'); };
-      incBtn.onclick = () => { state.kind = 'income'; incBtn.classList.add('on'); expBtn.classList.remove('on'); };
+      expBtn.onclick = () => { state.kind = 'expense'; expBtn.classList.add('on'); incBtn.classList.remove('on'); syncInvVis(); };
+      incBtn.onclick = () => { state.kind = 'income'; incBtn.classList.add('on'); expBtn.classList.remove('on'); syncInvVis(); };
       segKind.append(expBtn, incBtn);
       card.appendChild(segKind);
 
@@ -943,6 +1046,66 @@
       dateInput.type = 'date'; dateInput.value = todayISO();
       grid.append(amtBtn, dateInput);
       card.appendChild(grid);
+
+      // — Campo US$ SEMPRE visível (gasto ou receita): converte pela cotação
+      // de planejamento (fx.BRLperUSD) e preenche o valor em R$ (o ledger é
+      // BRL); o US$ digitado vira anotação na descrição ao salvar. —
+      // "profile" (const do bloco de chips) ainda não existe aqui — cópia local
+      const prof = profileResp && profileResp.profile;
+      const fxRate = (prof && prof.fx && Number(prof.fx.BRLperUSD)) || 0;
+      const usdRow = elt('div');
+      usdRow.style.cssText = 'display:flex;gap:10px;align-items:center;margin-top:10px';
+      const usdInput = elt('input');
+      usdInput.type = 'text'; usdInput.inputMode = 'decimal';
+      usdInput.placeholder = 'US$ (opcional)'; usdInput.style.width = '140px';
+      const usdHint = elt('span', 'muted', '');
+      usdHint.style.fontSize = '.78rem';
+      usdInput.oninput = () => {
+        const u = parseFloat(usdInput.value.replace(',', '.')) || 0;
+        if (u > 0 && fxRate) {
+          state.amount = Math.round(u * fxRate * 100) / 100; syncAmt();
+          usdHint.textContent = `= ${brl(state.amount)} (cotação ${fxRate.toFixed(2)})`;
+        } else usdHint.textContent = '';
+      };
+      usdRow.append(usdInput, usdHint);
+      if (fxRate) card.appendChild(usdRow);   // sem cotação no perfil, sem campo
+
+      // — Receita p/ investimento: esconde a convenção "-lib" do usuário —
+      // Toggle único que (1) sufixa a categoria com -lib (fora da renda dos
+      // envelopes) e (2) cria o aporte vinculado ao objetivo (creditGoal no
+      // servidor converte p/ a moeda dele).
+      const inv = { on: false, goalId: null };
+      const invWrap = elt('div');
+      invWrap.style.marginTop = '10px';
+      const invToggle = elt('button', 'fin-chip', '🪙 Vai para investimento');
+      const invSub = elt('div', 'muted', 'fora da renda do mês · cria o aporte junto');
+      invSub.style.cssText = 'font-size:.72rem;margin:4px 2px 0';
+      const invBody = elt('div');
+      invBody.style.cssText = 'display:none;margin-top:8px';
+      const goalLbl = elt('div', 'muted', 'Creditar no objetivo:');
+      goalLbl.style.cssText = 'font-size:.78rem;margin:10px 0 4px';
+      const goalRow = elt('div', 'fin-chips');
+      const goals = ((prof && prof.objectives) || []).filter((o) => (o.current || 0) < (o.target || Infinity));
+      goals.forEach((o, i) => {
+        const c = elt('button', 'fin-chip', o.label || o.id);
+        if (i === 0) { c.classList.add('on'); inv.goalId = o.id; }
+        c.onclick = () => {
+          inv.goalId = o.id;
+          goalRow.querySelectorAll('.fin-chip').forEach((x) => x.classList.remove('on'));
+          c.classList.add('on');
+        };
+        goalRow.appendChild(c);
+      });
+      invBody.append(goalLbl, goalRow);
+      invToggle.onclick = () => {
+        inv.on = !inv.on;
+        invToggle.classList.toggle('on', inv.on);
+        invBody.style.display = inv.on ? '' : 'none';
+      };
+      invWrap.append(invToggle, invSub, invBody);
+      const syncInvVis = () => { invWrap.style.display = state.kind === 'income' ? '' : 'none'; };
+      card.appendChild(invWrap);
+      syncInvVis();
 
       // Descrição.
       const descInput = elt('input');
@@ -980,16 +1143,33 @@
       btn.onclick = async () => {
         const amount = state.amount;
         if (!amount || amount <= 0) { BISA.toast('Informe um valor válido'); return; }
-        const category = catInput.value.trim() || 'outro';
+        const investing = state.kind === 'income' && inv.on;
+        const rawCat = catInput.value.trim() || (investing ? 'freelance' : 'outro');
+        // a convenção -lib (renda fora dos envelopes) é aplicada AQUI — o
+        // usuário nunca digita o sufixo (pedido 2026-07-16)
+        const category = investing && !rawCat.endsWith('-lib') ? rawCat + '-lib' : rawCat;
+        let desc = descInput.value.trim() || 'sem descrição';
+        // valor veio em dólar → anota o US$ na descrição (rastreabilidade)
+        const usdVal = parseFloat((usdInput.value || '').replace(',', '.')) || 0;
+        if (usdVal > 0 && !/us\$/i.test(desc)) desc += ` (US$ ${usdVal})`;
+        const date = dateInput.value || todayISO();
         btn.disabled = true; btn.textContent = 'Salvando…';
         try {
           await BISA.api('/finance/tx', {
             method: 'POST',
-            json: { kind: state.kind, amount, desc: descInput.value.trim() || 'sem descrição',
-              category, date: dateInput.value || todayISO() },
+            json: { kind: state.kind, amount, desc, category, date },
           });
-          saveLast({ kind: state.kind, category });
-          BISA.toast('Lançamento salvo!');
+          if (investing) {
+            // aporte irmão: bucket liberdade + creditGoal (o servidor credita o
+            // objetivo convertendo p/ a moeda dele)
+            await BISA.api('/finance/tx', {
+              method: 'POST',
+              json: { kind: 'expense', amount, desc: `Aporte liberdade — ${desc}`,
+                category, bucket: 'liberdade', goalId: inv.goalId || undefined, date, creditGoal: true },
+            });
+          }
+          saveLast({ kind: state.kind, category: rawCat });
+          BISA.toast(investing ? 'Receita + aporte lançados!' : 'Lançamento salvo!');
           this._render(true);
         } catch (e) {
           BISA.toast(e.message || 'Erro ao salvar');
@@ -1010,12 +1190,31 @@
 
     // Lista de lançamentos de uma despesa (categoria) no mês exibido, com editar
     // (abre o teclado p/ novo valor) e excluir (2 toques). Usa this._summary.
-    _renderTxSublist(line, b) {
+    _renderTxSublist(line, b, plan = 0, done = 0) {
       const manual = (this._summary && this._summary.cash && this._summary.cash.manual) || [];
       const txs = manual.filter((t) => t.kind === 'expense' && t.category === b.category)
         .sort((a, c) => (a.date < c.date ? 1 : -1));
 
       const sub = elt('div', 'fin-bud-sublist');
+
+      // Cabeçalho espelhando o estado do anel: sem meta = "livre" neutro; com
+      // meta = orçado/restam/estourou. Coerência com _provRow (pedido 2026-07-16).
+      const noPlan = !(plan > 0);
+      const over = !noPlan && done > plan + 0.005;
+      const head = elt('div', 'fin-bud-subhead' + (over ? ' neg' : noPlan ? ' free' : ''));
+      head.textContent = noPlan
+        ? `${brl(done)} · livre (sem meta)`
+        : over
+          ? `${brl(done)} de ${brl(plan)} · estourou ${brl(done - plan)}`
+          : `${brl(done)} de ${brl(plan)} · restam ${brl(plan - done)}`;
+      sub.appendChild(head);
+      // Sem meta: atalho pra definir uma (leva ao gerenciador de orçamento).
+      if (noPlan) {
+        const set = elt('button', 'fin-bud-setmeta', '＋ definir meta');
+        set.onclick = () => { this._manageMode = true; this._render(true); };
+        head.appendChild(set);
+      }
+
       if (txs.length === 0) {
         sub.appendChild(elt('div', 'fin-bud-subempty', 'Nenhum lançamento ainda neste mês.'));
         line.appendChild(sub);
@@ -1667,20 +1866,25 @@
     // restam", com ＋ p/ lançar e a lista de lançamentos expansível (tocar no
     // meio). Cor do anel: a do envelope → âmbar ≥85% → terracota ao estourar.
     _provRow(parent, b, plan, done, isThisMonth, color) {
-      const ratio = plan > 0 ? done / plan : (done > 0 ? 1 : 0);
+      // Sem provisão (plan 0): categoria "livre" — gastar não é estouro, só não
+      // tem meta própria; o teto real é o do envelope (bucket). Estado neutro,
+      // sem vermelho nem 100% falso (pedido 2026-07-16).
+      const noPlan = !(plan > 0);
+      const ratio = noPlan ? 0 : done / plan;
       const pct = Math.round(ratio * 100);
-      const over = done > plan + 0.005;
-      const near = !over && ratio >= 0.85;
+      const over = !noPlan && done > plan + 0.005;
+      const near = !over && !noPlan && ratio >= 0.85;
       const restam = Math.round((plan - done) * 100) / 100;
       const expanded = this._expandedCats.has(b.category);
 
       const row = elt('div', 'fin-prov-row');
 
       const ring = elt('div', 'fin-prov-ring' + (over ? ' over' : near ? ' warn' : ''));
-      // inline vence as classes .warn/.over — só colore o estado normal
+      // sem meta: anel CHEIO (100%) na cor do envelope + valor em destaque
+      // (pedido do Diego 2026-07-16). Com meta: % real como antes.
       if (color && !over && !near) ring.style.setProperty('--c', color);
-      ring.style.setProperty('--p', String(Math.min(100, pct)));
-      ring.appendChild(elt('b', null, `${pct}%`));
+      ring.style.setProperty('--p', String(noPlan ? 100 : Math.min(100, pct)));
+      ring.appendChild(elt('b', null, noPlan ? '100%' : `${pct}%`));
       row.appendChild(ring);
 
       const mid = elt('div', 'fin-prov-mid');
@@ -1688,8 +1892,9 @@
       name.append(elt('span', 'fin-prov-caret', expanded ? '▾ ' : '▸ '),
         document.createTextNode(b.label || b.category));
       mid.appendChild(name);
-      const sub = elt('div', 'fin-prov-sub' + (over ? ' neg' : ''));
-      sub.textContent = over
+      const sub = elt('div', 'fin-prov-sub' + (over ? ' neg' : noPlan ? ' free' : ''));
+      if (noPlan) sub.innerHTML = `<strong class="fin-prov-bigval">${brl(done)}</strong> · livre`;
+      else sub.textContent = over
         ? `${brl(done)} de ${brl(plan)} · estourou ${brl(-restam)}`
         : `${brl(done)} de ${brl(plan)} · restam ${brl(restam)}`;
       mid.appendChild(sub);
@@ -1711,7 +1916,7 @@
 
       if (expanded) {
         const holder = elt('div', 'fin-prov-sublist-holder');
-        this._renderTxSublist(holder, b);
+        this._renderTxSublist(holder, b, plan, done);
         parent.appendChild(holder);
       }
     },

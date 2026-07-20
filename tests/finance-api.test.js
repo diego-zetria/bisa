@@ -118,3 +118,30 @@ test('GET /finance/summary: pendentes ficam fora do caixa', async () => {
   assert.deepEqual(s.cash.byCategory, { mercado: 200 }); // pendente não entra
   assert.equal(s.cash.manual.length, 4); // mas aparece na lista do mês
 });
+
+test('GET /finance/dash: série multi-mês com byBucket e allocation', async () => {
+  try { fs.unlinkSync(financeStore.TX_FILE); } catch {}
+  freshProfile();
+  const hoje = new Date();
+  const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const cur = ym(hoje);
+  const prev = ym(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 15));
+  await api('/finance/tx', { method: 'POST', json: { kind: 'income', amount: 3000, category: 'salario', date: cur + '-01' } });
+  await api('/finance/tx', { method: 'POST', json: { kind: 'expense', amount: 400, category: 'mercado', bucket: 'custo-fixo', date: cur + '-03' } });
+  await api('/finance/tx', { method: 'POST', json: { kind: 'expense', amount: 100, category: 'livros', bucket: 'conhecimento', date: cur + '-04', pending: true } });
+  await api('/finance/tx', { method: 'POST', json: { kind: 'expense', amount: 250, category: 'mercado', bucket: 'custo-fixo', date: prev + '-10' } });
+
+  const { status, body } = await api('/finance/dash?months=3');
+  assert.equal(status, 200);
+  assert.equal(body.months.length, 3);
+  const rCur = body.months[body.months.length - 1];
+  assert.equal(rCur.month, cur);
+  assert.equal(rCur.income, 3000);
+  assert.equal(rCur.expense, 400);           // pendente fica fora
+  assert.equal(rCur.net, 2600);
+  assert.deepEqual(rCur.byBucket, { 'custo-fixo': 400 });
+  const rPrev = body.months[body.months.length - 2];
+  assert.equal(rPrev.month, prev);
+  assert.equal(rPrev.expense, 250);
+  assert.ok(body.allocation === null || typeof body.allocation === 'object');
+});
