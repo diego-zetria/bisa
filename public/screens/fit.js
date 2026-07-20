@@ -157,6 +157,31 @@
       .fit-empty .big { font-size:2.2rem; margin-bottom:10px; }
       .fit-empty code { font-family:var(--biso-mono); font-size:.8rem; }
       .fit-muted { color:var(--biso-ink-soft); }
+
+      /* Nikin Match + Hábitos (cards migrados da tela Ziggy) */
+      .ft-hint { font-size:.82rem; color:var(--biso-ink-soft); margin:10px 0 8px; }
+      .ft-nk { position:relative; overflow:hidden; }
+      .ft-nk::before { content:''; position:absolute; inset:0 0 auto 0; height:3px;
+        background:linear-gradient(90deg,#d97757,#e8a87c,#d97757); }
+      .ft-nk-hero { display:flex; align-items:baseline; gap:14px; margin:14px 0 4px; flex-wrap:wrap; }
+      .ft-nk-bal { font-size:2.6rem; font-weight:750; letter-spacing:-.02em; line-height:1;
+        color:#d97757; font-variant-numeric:tabular-nums; }
+      .ft-nk-bal small { font-size:1rem; font-weight:500; opacity:.65; letter-spacing:0; }
+      .ft-nk-week { font-size:.82rem; padding:4px 12px; border-radius:999px;
+        background:rgba(217,119,87,.12); color:#c4643f; font-weight:600; }
+      .ft-nk-st { font-size:.85rem; color:var(--biso-ink-soft); }
+      .ft-nk-shop { display:flex; flex-wrap:wrap; gap:7px; margin-top:12px; }
+      .ft-nk-shop button { font-size:.8rem; padding:6px 12px; border-radius:999px;
+        border:1px solid rgba(217,119,87,.4); background:none; color:var(--biso-ink); cursor:pointer; }
+      .ft-nk-shop button.afford { border-color:#d97757; background:rgba(217,119,87,.1); font-weight:600; }
+      .ft-hb { display:flex; flex-direction:column; gap:10px; }
+      .ft-hb-row { display:flex; align-items:center; gap:8px; }
+      .ft-hb-row .lb { min-width:130px; font-size:.85rem; }
+      .ft-hb-row .st { font-size:.72rem; color:var(--biso-primary); font-weight:600; min-width:46px; text-align:right; }
+      .ft-hb-grid { display:flex; gap:2px; flex:1; overflow:hidden; justify-content:flex-end; }
+      .ft-hb-grid i { width:5px; height:14px; border-radius:2px; background:var(--biso-line); flex:none; }
+      .ft-hb-grid i.on { background:var(--biso-primary); }
+      .ft-hb-row .fit-btn { min-height:34px; padding:4px 10px; font-size:.78rem; }
     `;
     document.head.appendChild(s);
   }
@@ -169,6 +194,8 @@
   let profileData = null;   // payload de GET /profile (medication/cycleDays — 1 fetch por mount)
   let insightsData = null;  // payload de GET /insights (carrega ao abrir)
   let showInsights = false;
+  let nikinData = null;     // /ziggy/match — { d } ou { error } (bridge pode estar fora)
+  let habitsData = null;    // /ziggy/habits — idem
   const openForms = new Set(); // ids de formulários inline abertos (ex.: 'set:Supino', 'metric:weight')
 
   const GLYPH = { workout: '⚒', meal1: '◔', supplements: '✚', meal2: '◕', cardio: '⇗' };
@@ -281,6 +308,17 @@
   async function loadInsights() {
     try { insightsData = await fitGet(`/insights?date=${date}`); } catch { insightsData = null; }
   }
+  // Nikin/hábitos vêm do bridge via proxy /ziggy/* (independentes do dia
+  // exibido): 1 fetch por mount + re-fetch após cada ação; 502 vira mensagem
+  // curta no card, como a tela Ziggy fazia.
+  async function loadNikin() {
+    try { nikinData = { d: await BISA.api('/ziggy/match') }; }
+    catch (e) { nikinData = { error: e.message || 'bridge fora' }; }
+  }
+  async function loadHabits() {
+    try { habitsData = { d: await BISA.api('/ziggy/habits') }; }
+    catch (e) { habitsData = { error: e.message || 'bridge fora' }; }
+  }
 
   // Navegação rápida de dias: respostas podem chegar fora de ordem. Cada fluxo
   // captura o dia pedido e descarta a resposta se o usuário já trocou de dia
@@ -333,6 +371,8 @@
     renderPlan(inner);
     renderWeek(inner);
     renderInsights(inner);
+    renderNikin(inner);
+    renderHabits(inner);
     if (preserveScroll) root.scrollTop = savedTop;
   }
 
@@ -765,6 +805,97 @@
     inner.appendChild(card);
   }
 
+  // ── Nikin Match (migrado da tela Ziggy) ─────────────────────────────────
+  // Placar do jogo do mês: pote fixo, 2 jogadores, pontos do Garmin + metas
+  // one-off clicáveis (apito 31/07 20:00 UTC). Dados do bridge via /ziggy/match.
+  function renderNikin(inner) {
+    const card = elx('div', 'fit-card ft-nk');
+    card.appendChild(elx('div', 'fit-sec-title', 'Nikin Match 🏆'));
+    if (!nikinData) { card.appendChild(elx('div', 'fit-muted', 'Carregando…')); inner.appendChild(card); return; }
+    if (nikinData.error) { card.appendChild(elx('div', 'fit-muted', 'falhou: ' + nikinData.error)); inner.appendChild(card); return; }
+    const d = nikinData.d;
+    const hero = elx('div', 'ft-nk-hero');
+    const pot = elx('div', 'ft-nk-bal');
+    pot.innerHTML = `R$ ${d.pot} <small>· ${d.name}</small>`;
+    const cd = elx('span', 'ft-nk-week');
+    cd.textContent = d.settled ? '🏁 encerrada' : `⏱ ${Math.floor(d.hoursLeft / 24)}d ${d.hoursLeft % 24}h`;
+    hero.append(pot, cd);
+    card.appendChild(hero);
+    for (const p of d.players) {
+      const s = d.scores[p];
+      const row = elx('div');
+      row.style.margin = '10px 0';
+      const top = elx('div');
+      top.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline;font-weight:600';
+      top.innerHTML = `<span>${p === 'diego' ? '🧔 Diego' : '👩 Gabriela'}</span>
+        <span style="color:#d97757;font-variant-numeric:tabular-nums">${s.points} pts · R$ ${s.share}</span>`;
+      const barW = Math.max(3, Math.round(100 * s.points / Math.max(1, ...d.players.map((q) => d.scores[q].points))));
+      const bar = elx('div');
+      bar.style.cssText = 'height:10px;border-radius:6px;background:var(--biso-line);margin:5px 0;overflow:hidden';
+      bar.innerHTML = `<div style="width:${barW}%;height:100%;border-radius:6px;background:linear-gradient(90deg,#d97757,#e8a87c)"></div>`;
+      const det = elx('div', 'ft-nk-st',
+        `💪 ${s.detail.forca} · 🏃 ${s.detail.cardio} · 👟 ${s.detail.passosDias} dias · 🎯 ${s.detail.metas} metas`);
+      row.append(top, bar, det);
+      card.appendChild(row);
+      const metas = d.metas[p] || [];
+      if (metas.length) {
+        const mrow = elx('div', 'ft-nk-shop');
+        for (const mt of metas) {
+          const b2 = elx('button', mt.done ? 'afford' : null, `${mt.done ? '✅' : '⬜'} ${mt.label} · ${mt.points}`);
+          b2.onclick = async () => {
+            try {
+              await BISA.api('/ziggy/match/meta', { method: 'POST', json: { player: p, id: mt.id } });
+              await loadNikin(); render(true);
+            } catch (e) { BISA.toast('falhou: ' + e.message); }
+          };
+          mrow.appendChild(b2);
+        }
+        card.appendChild(mrow);
+      }
+    }
+    card.appendChild(elx('div', 'ft-hint',
+      `${d.rules.forca.label} ${d.rules.forca.points}pts (máx ${d.rules.forca.maxWeek}/sem) · ${d.rules.cardio.label} ${d.rules.cardio.points}pts (máx ${d.rules.cardio.maxWeek}/sem) · ${d.rules.passos.label} ≥${d.rules.passos.target} = ${d.rules.passos.points}pts · pote dividido proporcional no apito`));
+    inner.appendChild(card);
+  }
+
+  // ── Hábitos 90 dias (migrado da tela Ziggy) ─────────────────────────────
+  // Heatmap 60 colunas por hábito — os automáticos se marcam sozinhos, treino
+  // é 1 toque. Dados do bridge via /ziggy/habits.
+  function renderHabits(inner) {
+    const card = elx('div', 'fit-card');
+    card.appendChild(elx('div', 'fit-sec-title', 'Hábitos (90 dias)'));
+    card.appendChild(elx('div', 'ft-hint',
+      'Os automáticos se marcam sozinhos (pesagem, inglês, caderno, revisão). Treino: toque aqui ou fale "Ziggy, ask B B S I worked out".'));
+    if (!habitsData) { card.appendChild(elx('div', 'fit-muted', 'Carregando…')); inner.appendChild(card); return; }
+    if (habitsData.error) { card.appendChild(elx('div', 'fit-muted', 'falhou: ' + habitsData.error)); inner.appendChild(card); return; }
+    const list = elx('div', 'ft-hb');
+    for (const h of habitsData.d.habits || []) {
+      const row = elx('div', 'ft-hb-row');
+      const lb = elx('span', 'lb', `${h.emoji} ${h.label}`);
+      const grid = elx('div', 'ft-hb-grid');
+      for (const v of (h.days || []).slice(-60)) {
+        const sq = elx('i'); if (v) sq.className = 'on'; grid.appendChild(sq);
+      }
+      const st = elx('span', 'st', h.streak ? `${h.streak}${h.weekly ? 'w' : 'd'} 🔥` : '—');
+      row.append(lb, grid, st);
+      if (h.kind === 'manual') {
+        const bt = elx('button', 'fit-btn ghost', h.todayDone ? 'feito hoje ✓' : '✓ marcar hoje');
+        bt.disabled = h.todayDone;
+        bt.onclick = async () => {
+          bt.disabled = true;
+          try {
+            await BISA.api('/ziggy/habits/check', { method: 'POST', json: { id: h.id } });
+            await loadHabits(); render(true);
+          } catch (e) { BISA.toast('falhou: ' + e.message); bt.disabled = false; }
+        };
+        row.appendChild(bt);
+      }
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    inner.appendChild(card);
+  }
+
   // ── Estados vazios ───────────────────────────────────────────────────────
   function renderNoProfile() {
     if (!root) return;
@@ -799,14 +930,18 @@
       el.appendChild(root);
       date = todayISO();
       day = null; weekData = null; profileData = null; insightsData = null; showInsights = false;
+      nikinData = null; habitsData = null;
       openForms.clear();
       render();
       reload();
+      loadNikin().then(() => { if (root) render(true); });
+      loadHabits().then(() => { if (root) render(true); });
     },
     unmount() {
       closeViz();
       root = null;
       day = null; weekData = null; profileData = null; insightsData = null;
+      nikinData = null; habitsData = null;
       openForms.clear();
     },
   };

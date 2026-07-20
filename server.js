@@ -320,9 +320,287 @@ makeEventsBridge({
   META: process.env.BISA_META_DIR || path.join(CWD, '.meta'),
 }).start();
 
+// === ticker da Ziggy (alexa-claude-bridge :7788) ============================
+// Digests da tradução contínua de reuniões, em texto ao vivo no iPad.
+// Mesmo padrão das pontes: o iPad só fala com o bisa; a porta fica aqui.
+app.get('/ziggy/digests', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/digests');
+    res.json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Tradutor de reunião do iPad → bridge /howsay (feature exclusiva do Ziggy
+// trazida pra dentro da bisa; a porta 7788 fica escondida).
+app.post('/ziggy/howsay', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/howsay', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phrase: (req.body && req.body.phrase) || '' }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Fluxos McGraw da tela Ziggy (rituais diários de trabalho → claude -p no
+// cwd do mcgraw, via bridge). Pode levar ~2 min — sem timeout no proxy.
+app.post('/ziggy/mcgraw', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/mcgraw', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flow: req.body && req.body.flow, text: (req.body && req.body.text) || '' }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Clipboard dos Macs (pessoal via pbpaste, corp via biso run) p/ preencher
+// o campo do card McGraw com 1 toque. Corp pode levar ~10-30s (fila do biso).
+app.get('/ziggy/clipboard', requireAuth, async (req, res) => {
+  try {
+    const src = req.query.src === 'corp' ? 'corp' : 'local';
+    const r = await fetch(`http://127.0.0.1:7788/clipboard?src=${src}`);
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Caminho de volta: manda texto do iPad pro clipboard do corp (ou deste Mac).
+app.post('/ziggy/clipboard', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/clipboard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ src: (req.body && req.body.src) || 'local', text: (req.body && req.body.text) || '' }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Guia de comandos da Echo (COMANDOS.md do bridge) p/ consulta na tela Ziggy.
+app.get('/ziggy/comandos', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/comandos');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Revisão semanal pré-agregada (padrão Houmann): GET junta a semana (via
+// bridge), POST salva a revisão como nota no caderno + série de domínios.
+app.get('/ziggy/weekly', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/weekly-review');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/ziggy/weekly', requireAuth, async (req, res) => {
+  try {
+    const { answers = {}, domains = {} } = req.body || {};
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    const week = `${local.getFullYear()}-W${String(Math.ceil((((local - new Date(local.getFullYear(), 0, 1)) / 864e5) + new Date(local.getFullYear(), 0, 1).getDay() + 1) / 7)).padStart(2, '0')}`;
+    const dom = Object.entries(domains).map(([k, v]) => `- ${k}: ${'★'.repeat(Number(v) || 0)}${'☆'.repeat(5 - (Number(v) || 0))} (${v}/5)`).join('\n');
+    const md = `# Revisão semanal — ${week}\n\n## O que foi feito\n${answers.done || '—'}\n\n## O que mudou\n${answers.changed || '—'}\n\n## Foco da próxima semana\n${answers.focus || '—'}\n\n## Domínios\n${dom}\n\n— revisão feita na aba ⚡ Ziggy, ${now.toISOString()}\n`;
+    const inbox = path.join(CWD, 'pkm', 'Inbox');
+    fs.mkdirSync(inbox, { recursive: true });
+    fs.writeFileSync(path.join(inbox, `revisao-semanal-${week}.md`), md);
+    // série temporal dos domínios (sparklines futuras + comentário do Claude)
+    fs.appendFileSync(path.join(CWD, 'codex', 'weekly-domains.jsonl'),
+      JSON.stringify({ ts: now.toISOString(), week, domains }) + '\n');
+    res.json({ ok: true, note: `revisao-semanal-${week}.md` });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Recarga remota: o app.js já trata {type:'reload'} no WS — este endpoint
+// emite. Uso: depois de deploy de tela, recarregar o iPad sem tocar nele.
+app.post('/dev/reload', requireAuth, (_req, res) => {
+  broadcast({ type: 'reload' });
+  res.json({ ok: true });
+});
+// Nikin Match (placar do jogo do mês) — estado + toggle de meta.
+app.get('/ziggy/match', requireAuth, async (_req, res) => {
+  try { const r = await fetch('http://127.0.0.1:7788/match'); res.status(r.status).json(await r.json()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/ziggy/match/meta', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/match/meta', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ player: req.body && req.body.player, id: req.body && req.body.id }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Nikin (rotina com prêmios em dinheiro): saldo/extrato + resgate real.
+app.get('/ziggy/nikin', requireAuth, async (_req, res) => {
+  try { const r = await fetch('http://127.0.0.1:7788/nikin'); res.status(r.status).json(await r.json()); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/ziggy/nikin/redeem', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/nikin/redeem', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount: req.body && req.body.amount, desc: req.body && req.body.desc }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Hábitos (engine no bridge: auto-detectados + manuais) p/ o heatmap da aba Ziggy.
+app.get('/ziggy/habits', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/habits');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/ziggy/habits/check', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/habits/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: req.body && req.body.id, source: 'tap' }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// Contagem p/ o badge do ícone do PWA: inbox do caderno + envelopes em alerta.
+app.get('/badge/count', requireAuth, async (_req, res) => {
+  let count = 0;
+  try {
+    count += fs.readdirSync(path.join(CWD, 'pkm', 'Inbox')).filter((f) => f.endsWith('.md')).length;
+  } catch {}
+  try {
+    const r = await fetch('http://127.0.0.1:7788/envelopes');
+    const d = await r.json();
+    count += (d.envelopes || []).filter((e) => e.flagged).length;
+  } catch {}
+  res.json({ count });
+});
+
+// Agente de finanças (conversa com acesso real aos dados do finance; escrita
+// sandboxada no diretório + confirmação em conversa). ~30-90s por turno.
+app.post('/ziggy/finagent', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/finagent', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: (req.body && req.body.text) || '' }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Memória (journal do biso) por texto no iPad — bridge /journal → /codex/ask.
+app.get('/ziggy/journal', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch(`http://127.0.0.1:7788/journal?q=${encodeURIComponent(String(req.query.q || ''))}`);
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Fila de PRs (gh no corp via bridge): listar / analisar / aprovar (gate
+// humano = o toque no iPad). Análise pode levar ~2 min — sem timeout aqui.
+app.get('/ziggy/prs', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/prs');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.post('/ziggy/prs/:action(analyze|approve)', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch(`http://127.0.0.1:7788/prs/${req.params.action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: req.body && req.body.repo, number: req.body && req.body.number }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Status do ecossistema (checks paralelos no bridge) p/ o card 🩺 da tela.
+app.get('/ziggy/ecosystem', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/ecosystem');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Guia de fluxos/automações (FLUXOS.md do bridge) — mesmo padrão.
+app.get('/ziggy/fluxos', requireAuth, async (_req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/fluxos');
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+// Liga/desliga a tradução contínua do Ziggy a partir do iPad.
+app.post('/ziggy/translate', requireAuth, async (req, res) => {
+  try {
+    const r = await fetch('http://127.0.0.1:7788/translate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ on: !!(req.body && req.body.on) }),
+    });
+    res.status(r.status).json(await r.json());
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+app.get('/ziggy', requireAuth, (_req, res) => {
+  res.type('html').send(`<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ziggy — ticker</title>
+<style>
+  body{background:#101418;color:#d7dee6;font:17px/1.5 system-ui;-webkit-font-smoothing:antialiased;margin:0;padding:24px 16px 60px}
+  .wrap{max-width:680px;margin:0 auto}
+  h1{font-size:15px;letter-spacing:.16em;text-transform:uppercase;color:#8494a3;margin:0 0 4px}
+  #st{font-size:13px;color:#5ad1c8;margin-bottom:18px}
+  .d{border-left:3px solid #ffb454;background:#161c22;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:10px}
+  .d time{display:block;font-size:11.5px;color:#8494a3;margin-bottom:2px;font-variant-numeric:tabular-nums}
+  .say{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:13.5px;color:#5ad1c8;background:#1d2833;border:1px solid #232c35;border-radius:14px;padding:3px 11px}
+  .vazio{color:#8494a3;font-size:14px}
+  .hs{background:#161c22;border:1px solid #232c35;border-radius:12px;padding:14px;margin-bottom:22px}
+  .hs textarea{width:100%;box-sizing:border-box;background:#101418;color:#d7dee6;border:1px solid #232c35;border-radius:8px;padding:10px 12px;font:16px/1.4 system-ui;resize:vertical;min-height:56px}
+  .hs .row{display:flex;gap:8px;margin-top:10px;align-items:center}
+  .hs button{background:#5ad1c8;color:#08201e;border:none;border-radius:8px;padding:10px 18px;font:600 15px system-ui;min-height:44px}
+  .hs button:disabled{opacity:.5}
+  .hs .out{margin-top:12px;font-size:19px;line-height:1.45;color:#eaf5f3;background:#12211f;border-left:3px solid #5ad1c8;border-radius:0 8px 8px 0;padding:12px 14px;display:none}
+  .hs .out.on{display:block}
+  .hs .out b{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#5ad1c8;display:block;margin-bottom:5px;font-weight:700}
+  .hs .copy{background:none;color:#8494a3;border:1px solid #232c35;padding:6px 12px;font-size:13px;min-height:0}
+</style>
+<div class="wrap">
+  <h1>Ziggy ▸ como falo em inglês?</h1>
+  <div class="hs">
+    <textarea id="hsIn" placeholder="Digite em português (ou inglês quebrado) o que você quer dizer na reunião…"></textarea>
+    <div class="row"><button id="hsGo">Traduzir</button><span id="hsSt" style="font-size:13px;color:#8494a3"></span></div>
+    <div class="out" id="hsOut"><b>diga assim</b><span id="hsTxt"></span><div class="row" style="margin-top:10px"><button class="copy" id="hsCopy">copiar</button></div></div>
+  </div>
+  <h1>Ziggy ▸ ticker da reunião</h1><div id="st">conectando…</div><div id="feed"></div>
+</div>
+<script>
+const hsIn=document.getElementById('hsIn'),hsGo=document.getElementById('hsGo'),hsSt=document.getElementById('hsSt'),
+      hsOut=document.getElementById('hsOut'),hsTxt=document.getElementById('hsTxt'),hsCopy=document.getElementById('hsCopy');
+async function howsay(){
+  const phrase=hsIn.value.trim(); if(!phrase) return;
+  hsGo.disabled=true; hsSt.textContent='pensando…';
+  try{
+    const r=await fetch('/ziggy/howsay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phrase})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||('erro '+r.status));
+    hsTxt.textContent=d.english; hsOut.classList.add('on'); hsSt.textContent='';
+  }catch(e){ hsSt.textContent='falhou: '+e.message; }
+  finally{ hsGo.disabled=false; }
+}
+hsGo.onclick=howsay;
+hsIn.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter') howsay(); });
+hsCopy.onclick=()=>{ navigator.clipboard&&navigator.clipboard.writeText(hsTxt.textContent); hsCopy.textContent='copiado ✓'; setTimeout(()=>hsCopy.textContent='copiar',1500); };
+</script>
+<script>
+async function tick(){
+  try{
+    const r = await fetch('/ziggy/digests'); const d = await r.json();
+    document.getElementById('st').textContent =
+      (d.active ? '● digerindo a cada ~30s' : '○ parado — fale "Ziggy, ask B B S start digest"') + (d.radio ? ' · 📻 rádio ligada' : '');
+    const feed = document.getElementById('feed');
+    const esc = s => String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+    feed.innerHTML = (d.digests||[]).slice().reverse().map(x =>
+      '<div class="d"><time>'+new Date(x.ts).toLocaleTimeString('pt-BR')+'</time>'+esc(x.text)
+      + ((x.say&&x.say.length) ? '<div class="say">'+x.say.map(s=>'<span class="chip">💬 '+esc(s)+'</span>').join('')+'</div>' : '')
+      + '</div>'
+    ).join('') || '<div class="vazio">nenhum digest ainda — os blocos aparecem aqui conforme a reunião rola.</div>';
+  }catch(e){ document.getElementById('st').textContent = 'bridge fora do ar: '+e.message; }
+}
+tick(); setInterval(tick, 5000);
+</script>`);
+});
+
 // === ponte novela-shorts (proxy REST + mídia da API :7779) ==================
 // Mesmo padrão do biso: o iPad fala só com o bisa; a porta/token da API ficam
-// no servidor. Suba a API no Mac com: python api.py (no projeto novela-shorts).
+// no servidor. A API roda como LaunchAgent com.bisa.novela (KeepAlive) desde
+// 2026-07-15; manual: python api.py no projeto novela-shorts.
 const NOVELA_URL = process.env.NOVELA_URL || 'http://127.0.0.1:7779';
 const NOVELA_TOKEN = process.env.NOVELA_TOKEN || '';
 const makeNovelaBridge = require('./lib/novela-bridge');
@@ -402,6 +680,16 @@ const writeChatFocus = (id) => writeChatMeta({ project: id });
 // (a regra por saudação "Olá/Hello" do CLAUDE.md era ignorada com histórico).
 const readChatLang = () => (readChatMeta().lang === 'en' ? 'en' : 'pt');
 const writeChatLang = (lang) => writeChatMeta({ lang });
+// Modo Estudo (📚 no caderno): sessão de pesquisa/aprendizado — o Claude mantém
+// uma nota-guia viva no vault sem pedir permissão a cada turno (vídeos
+// 2026-07-19: o usuário pediu "vá documentando" à mão e confirmou 4 ofertas
+// "quer que eu salve?" por chip).
+const readChatMode = () => (readChatMeta().mode === 'estudo' ? 'estudo' : '');
+const writeChatMode = (mode) => writeChatMeta({ mode: mode === 'estudo' ? 'estudo' : '' });
+const ESTUDO_PROMPT = `Modo Estudo ativo — o usuário está pesquisando/aprendendo um tema (não programando).
+- Mantenha UMA nota-guia viva desta sessão no vault Obsidian: crie-a na primeira resposta (nome descritivo em kebab-case) e ATUALIZE a mesma nota a cada turno com o que foi consolidado.
+- NÃO pergunte "quer que eu salve/adicione na nota?" — atualize direto e sinalize numa linha curta ("✅ nota atualizada: <o que entrou>").
+- Termine cada resposta oferecendo 2-3 caminhos curtos de aprofundamento (a/b/c).`;
 const resolveBisoCwd = () => {
   if (process.env.BISO_CHAT_CWD) return BISO_CHAT_CWD;      // override explícito
   const focus = readChatFocus();
@@ -414,6 +702,7 @@ const resolveBisoCwd = () => {
 
 const bisoSession = makeBisoSession({
   CWD: BISO_CHAT_CWD, getCwd: resolveBisoCwd, getLang: readChatLang, CLAUDE_CMD, USER_SHELL,
+  getExtraSystemPrompt: () => (readChatMode() === 'estudo' ? ESTUDO_PROMPT : ''),
   broadcast: bisoBroadcast, dispatchNotification,
   extraEnv: { BISO_URL, BISO_TOKEN, BISO_JOURNAL },
   // O agente da aba Biso pode EXECUTAR ações no Mac pessoal (buscar arquivos,
@@ -466,6 +755,11 @@ app.get('/biso-chat/file', requireAuth, (req, res) => {
     res.json({ name: path.basename(abs), path: abs, content: fs.readFileSync(abs, 'utf8') });
   } catch { res.status(404).json({ error: 'arquivo não encontrado' }); }
 });
+app.get('/biso-chat/mode', requireAuth, (_req, res) => res.json({ mode: readChatMode() }));
+app.post('/biso-chat/mode', requireAuth, (req, res) => {
+  writeChatMode(String((req.body && req.body.mode) || ''));
+  res.json({ ok: true, mode: readChatMode() });
+});
 app.get('/biso-chat/lang', requireAuth, (_req, res) => res.json({ lang: readChatLang() }));
 app.post('/biso-chat/lang', requireAuth, (req, res) => {
   const lang = String((req.body && req.body.lang) || '');
@@ -488,7 +782,7 @@ app.post('/biso-followups', requireAuth, async (req, res) => {
   const user = String((req.body && req.body.user) || '').slice(0, 2000);
   const assistant = String((req.body && req.body.assistant) || '').slice(0, 4000);
   if (!user && !assistant) return res.json({ suggestions: [] });
-  const prompt = `Última troca de uma conversa com um agente de código (Claude Code):\n\n[Usuário]\n${user}\n\n[Assistente]\n${assistant}\n\nProponha de 2 a 3 mensagens CURTAS (máx ~6 palavras cada) que o usuário poderia enviar a seguir para avançar o trabalho. Devem ser DISTINTAS entre si (não redundantes) e acionáveis. Responda APENAS um array JSON de strings, nada mais.`;
+  const prompt = `Última troca de uma conversa com um agente de código (Claude Code):\n\n[Usuário]\n${user}\n\n[Assistente]\n${assistant}\n\nProponha de 2 a 3 mensagens CURTAS (máx ~6 palavras cada) que o usuário poderia enviar a seguir para avançar o trabalho. REGRA PRIORITÁRIA: se a resposta do assistente TERMINA oferecendo opções (a/b/c) ou perguntando "quer que eu …?", as sugestões devem ser exatamente essas ofertas, encurtadas em imperativo (ex.: "Adicione a seção na nota") — são as únicas que o usuário aceita. Senão, proponha próximos passos DISTINTOS entre si e acionáveis. Responda APENAS um array JSON de strings, nada mais.`;
   try {
     const out = await headless.runClaudeHeadless(prompt, resolveBisoCwd(), 25000, { feature: 'biso-followups' });
     let arr = [];
@@ -538,6 +832,7 @@ Responda APENAS JSON: {"kind":"expense","amount":62,"category":"mercado","bucket
 // qualquer falha vira {confidence:0, completions:[]}, nunca erro na UI.
 app.post('/biso-predict', requireAuth, async (req, res) => {
   const draft = String((req.body && req.body.draft) || '').slice(0, 2000);
+  const topic = String((req.body && req.body.topic) || '').slice(0, 500);
   const history = (Array.isArray(req.body && req.body.history) ? req.body.history : [])
     .map((s) => String(s || '').slice(0, 300)).filter(Boolean).slice(-8);
   const nWords = draft.trim().split(/\s+/).filter(Boolean).length;
@@ -548,14 +843,14 @@ app.post('/biso-predict', requireAuth, async (req, res) => {
   // texto, o assunto tem que vir do próprio rascunho.
   const rich = nWords >= 8;
   const aceitas = rich ? readMetrics('previsao-aceita', 3) : [];
-  const prompt = `Você observa alguém digitando uma mensagem AINDA INCOMPLETA para um agente de código (Claude Code) num caderno de iPad.
-${rich && history.length ? `\n[Mensagens recentes do mesmo usuário — só ESTILO; não herde o assunto delas]\n${history.map((h) => '- ' + h.replace(/\n+/g, ' ')).join('\n')}\n` : ''}${aceitas.length ? `\n[Complementos que este usuário aceitou antes]\n${aceitas.map((a) => `- "${a.draft || ''}" → "${a.completion || ''}"`).join('\n')}\n` : ''}
+  const prompt = `Você observa alguém digitando uma mensagem AINDA INCOMPLETA para um assistente pessoal num caderno de iPad (o assunto pode ser QUALQUER coisa: pesquisa, estudo, finanças, código — o tema corrente é o que vale).
+${topic ? `\n[Tema atual da conversa — a resposta mais recente do assistente terminava assim; as continuações devem ser coerentes com ESTE tema]\n${topic.replace(/\n+/g, ' ')}\n` : ''}${rich && history.length ? `\n[Mensagens recentes do mesmo usuário — só ESTILO; não herde o assunto delas]\n${history.map((h) => '- ' + h.replace(/\n+/g, ' ')).join('\n')}\n` : ''}${aceitas.length ? `\n[Complementos que este usuário aceitou antes]\n${aceitas.map((a) => `- "${a.draft || ''}" → "${a.completion || ''}"`).join('\n')}\n` : ''}
 [Rascunho parcial]
 ${draft}
 
 Estime:
 1. "confidence": inteiro 0-100 — quão previsível já está a INTENÇÃO completa (0 = começo ambíguo, 100 = intenção óbvia). Se o rascunho ainda não revela o ASSUNTO, confidence ≤ 25.
-2. "completions": 2 a 3 CONTINUAÇÕES prováveis do rascunho (apenas o texto que falta, máx ~10 palavras cada, no idioma do rascunho, distintas entre si). Devem seguir o assunto do PRÓPRIO rascunho — nunca de conversas anteriores.
+2. "completions": 2 a 3 CONTINUAÇÕES prováveis do rascunho (apenas o texto que falta, máx ~10 palavras cada, no idioma do rascunho, distintas entre si). Devem seguir o assunto do PRÓPRIO rascunho lido à luz do tema atual — nunca inventar um domínio que não aparece em nenhum dos dois.
 
 Responda APENAS o JSON, sem markdown: {"confidence": 62, "completions": ["...", "..."]}`;
   try {
