@@ -1,5 +1,219 @@
 # bisa — Changelog de features
 
+## 2026-07-20 — ZIGGY: redesign cockpit de trabalho + Ticker de Reunião 2.0
+
+A tela ⚡ Ziggy foi redesenhada com projeto (antes: 12 cards acumulados sem
+layout). Identidade nova: cockpit de trabalho/reuniões em inglês. Decisões do
+Diego: reunião é o herói; Nikin+Hábitos → Fit; agente de finanças → Finanças
+(botão 🤖); ecossistema → Ajustes; journal removido (Caderno é o fluxo
+principal). Ficaram: McGraw meu dia, PRs, clipboard, como-falo, revisão
+semanal, guias.
+
+- **Herói 🎧 Reunião** (`screens/ziggy.js` reescrito, 946→~700 linhas): grid
+  2 colunas (feed de digests | painel de contexto), modo tela cheia ⛶,
+  aviso de silêncio (3+ blocos descartados → "a reunião está tocando perto
+  de mim?"), toggle PT/EN movido pro topo.
+- **Camada de contexto no bridge** (alexa-claude-bridge server.js,
+  `contextPass`): 1º passe ~1 min, depois a cada ~2 min (4 blocos) — Sonnet
+  com read:true no MCGRAW_CWD devolve JSON {summary acumulado pt-BR,
+  materials (até 3 docs nossos sobre o assunto), say (2 falas EN
+  fundamentadas)}. Exposto em GET /digests (context, silentBlocks) — o proxy
+  /ziggy/digests repassa sem mudança no bisa.
+- **Resumo final** (`finishTranslation`): ao parar a tradução (iPad ou voz)
+  com ≥3 blocos, Haiku resume os digests → meetings/<data>.md via meetLog.
+- **Como falo 2.0**: contenteditable + 🎤 BISO_DITADO (onStop → traduz
+  sozinho) + ▶ ouvir via POST /tts (Kokoro detecta idioma). Zero digitação.
+- **Migrações**: fit.js ganhou Nikin Match + Hábitos (classes .ft-nk/.ft-hb);
+  finance.js ganhou overlay do agente (🤖 no fin-month-nav, histórico
+  `_agentLog` persiste, re-render pós-resposta); ajustes.js ganhou card
+  Ecossistema Ziggy (refresh 60s, clearInterval no unmount).
+- **Travas no bridge** (pós 1ª reunião real): gravação↔tradução se recusam
+  (compartilham o BisaEar; pkill por bloco matava a gravação);
+  TranslateStart/RadioStart por voz agora contam a sessão 'ipad' (loop duplo
+  com pkill mútuo); POST /translate recusa com gravação ativa (409).
+  EAR_MODE=mic no .env: captura pelo input padrão p/ reunião no Mac corp/TV.
+
+## 2026-07-19 — FIN: Dashboards interativos (📊 no nav do mês, Claude design)
+
+Novo board `screens/finance-dash.js` (botão 📊 na navegação do mês; volta com
+←). Estética Claude: ivory #FAF9F5 / dark #1F1E1B (segue o tema noite),
+números em serifa (Tiempos/Iowan/Georgia), terracotta, cards planos 1px.
+SVG à mão, sem lib. Paleta categórica de 6 cores VALIDADA com o
+validate_palette.js do skill dataviz (light e dark passam; CVD 6-8 coberto
+com rótulo direto + gaps 2px).
+
+- **GET /finance/dash?months=N** (lib/finance/api.js): série multi-mês
+  (renda/gasto/saldo/byCategory/byBucket, pendentes fora) do ledger manual +
+  totais do Actual (best-effort paralelo) + allocation/Fixed/Rest do perfil.
+  Teste em tests/finance-api.test.js (6/6).
+- **Tiles**: saldo (com % guardado da renda), entrou/saiu (▲▼ vs mês
+  anterior), maior categoria — número herói em serifa.
+- **Fluxo de caixa**: barras pareadas entrou×saiu por mês, 1 eixo, grade
+  recessiva, banda no mês focado, rótulos diretos só no focado; tocar um mês
+  FOCA o board inteiro (tiles/envelopes/donut re-renderizam).
+- **Envelopes AUVP**: gasto vs alvo com a MESMA precedência da tela principal
+  (fixa em R$ > allocationRest "resto da renda" > %); estouro = segmento
+  vermelho + "⚠ estourou"; ≥85% = "◔ quase". **Liberdade é aporte**: acima do
+  alvo = verde "✓ acima da meta", valor sempre verde (feedback do usuário no
+  mesmo dia — ver memória finance-liberdade-e-aporte).
+- **Para onde foi**: donut top-5 + outros (gaps 2px, total em serifa no
+  centro), legenda com valores/%; cor por ENTIDADE com ranking fixo do
+  período (trocar o mês não repinta).
+- **Tendência por categoria**: 4 pequenos múltiplos (sparkline + total).
+- **Drill**: tocar envelope/categoria/spark → card de lançamentos do mês
+  focado (via /finance/summary cacheado); tooltip por marca em tudo
+  (pointer + toque). Verificado no Playwright (light, dark, drill).
+
+## 2026-07-19 — Rodada 6 do caderno: 5 melhorias dos vídeos de estudo (Copa)
+
+Análise densa (179 frames, 6 agentes) dos 2 vídeos de 2026-07-19 18:21/18:31 —
+sessão de ESTUDO (Copas 2026/2030/2034) com nota-viva no vault. Achados: ~29%
+do tempo era espera com tela parada (texto só chegava por mensagem completa),
+um turno "…" ficou 80s+ morto sem aviso, o trecho selecionado se perdia ao
+fechar o preview (~24s de re-seleção), 0 escrita à mão real (tudo swipe no
+teclado flutuante a ~16 wpm) e completações do pad alucinando programação.
+
+1. **Streaming token a token** — `--include-partial-messages` no session.js:
+   `stream_event` → `llm.text/llm.thinking` deltas; blocos das mensagens
+   completas são pulados quando houve partials (dedup; fallback CLI antigo).
+   HUD: Write/Edit de `.md` em voo vira "✍ escrevendo a nota · arquivo".
+2. **Watchdog de turno morto** — 12s sem NENHUM evento do servidor → o card
+   vira botão "⚠ sem resposta — tocar para reenviar" (mesmo texto, mesmo
+   card); erro em card vazio agora renderiza DENTRO do card.
+3. **Porta-trecho** — seleção → menu "▶ puxar o fio · ✎ escrever"; o trecho
+   sobrevive num pill acima do rodapé quando a seleção colapsa; chip nasce
+   dentro do preview da nota (antes ficava atrás do modal); chrome dos cards
+   com `user-select:none`.
+4. **Modo Estudo 📚 + nota fixada** — `/biso-chat/mode` + system prompt por
+   turno (nota-guia sem pedir permissão, "✅ nota atualizada", fecha com
+   a/b/c); última `.md` tocada vira pill 📌 no topo (preview em 1 toque);
+   tabela cortada ganha pista "⇢ deslize".
+5. **Previsão/chips no tema** — `/biso-predict` recebe `topic` (fim da última
+   resposta) e framing neutro (não mais "agente de código"); resposta velha
+   descartada se o rascunho mudou (fix chips "…ma sejam"); followups priorizam
+   as ofertas de fechamento do Claude (único formato com conversão nos vídeos).
+   Pad: traço acidental da Pencil descartado ao abrir, 🎤 espelho no cabeçalho
+   (teclado flutuante cobria o Ditar), Ditar promovido, pill "🌐 resposta PT/EN".
+
+## 2026-07-19 — Aba "⚡ Ziggy": voz (Alexa) + fluxos McGraw no iPad
+
+Nova tela `screens/ziggy.js` + botão no nav: o Ziggy (alexa-claude-bridge,
+:7788) entra no bisa pelo padrão das pontes — proxies `/ziggy/*` no server
+(digests, howsay, translate, mcgraw, clipboard GET/POST, comandos, fluxos),
+porta escondida, cookie autentica. Cards: **McGraw — meu dia** (7 fluxos de
+trabalho → claude -p Sonnet no cwd do mcgraw via Biso `/agent/ask` com
+`read:true`; saída em markdown com copiar / salvar no caderno / mandar pro
+clipboard do Mac corp), **como falo em inglês?**, **ticker da reunião** com
+liga/desliga da tradução, e dois guias em acordeão (COMANDOS.md e FLUXOS.md
+do bridge, parseados — arquivo é a fonte). Tela bilíngue PT/EN
+(`localStorage zg-lang`; EN treina o inglês do Diego) com a fala exata da
+Echo dentro de cada botão (`🎤 "Ziggy, ask B B S …"`).
+
+Integrações de sistema: clipboard dos dois Macs (pbpaste local; corp via
+`biso run --on corp`, só no expediente), briefing automático seg–sex 08:45
+(LaunchAgent do bridge → nota `ziggy-mcgraw-morning-<data>.md` no caderno →
+anel amarelo no Echo) e handoff circular (wrapup grava
+`followups/<data>-handoff-ziggy.md` no repo mcgraw; o morning seguinte lê).
+Detalhe de implementação: fetches da tela usam `BISA.api`/`BISA.apiRaw`;
+salvar no caderno reusa `/pkm/inbox?kind=file`. Deploy: só reload (tela é
+estática); os proxies pedem restart do server.
+
+## 2026-07-16 — Aba "✨ Evolução" no Biso (changelog interativo)
+
+Nova sub-view no biso (`VIEWS` + `renderView` + `renderEvolucao` em `biso.js`)
+que mostra a evolução do sistema numa timeline cronológica interativa, pro
+Diego (não-dev) acompanhar. Fonte: **`public/changelog-feed.json`** — feed
+AMIGÁVEL curado pelo Claude (área/emoji/tag/summary/detail), servido estático,
+distinto do CHANGELOG.md técnico. **IMPORTANTE p/ sessões futuras: ao adicionar
+feature nova, espelhe uma entrada no feed em linguagem simples.**
+
+Cada cabeçalho de data leva uma pílula de tempo relativo (`relTime`): hoje/
+ontem → 2–30 dias ("há N dias") → meses ("há N meses") → anos, ancorada na
+meia-noite local (não escorrega pela hora). Testada nos limites (30d=dias,
+31d=1 mês, 365d=1 ano).
+
+UI: cabeçalho + filtro por área (chips), timeline com trilho vertical/pontos
+coloridos por área, badge de área + tag (novo/correção), selo "novo" (≤10
+dias), toque expande o `detail`. Botão "✨ Resumir pra mim" reusa o caderno:
+monta um prompt com as 8 entradas recentes e chama `commitText` → o Claude
+narra a evolução (é a "funcionalidade do Claude" pedida, sem custo por view).
+Labels seguem `cadernoLang` (🌐); conteúdo do feed é PT.
+
+**Pegadinha (achada no e2e):** `renderEvolucao` é chamado DIRETO pelos chips de
+filtro/idioma, fora do `renderView` que limpa `contentEl` — sem um
+`contentEl.innerHTML=''` no topo, cada filtro EMPILHAVA uma timeline nova
+(13→26 itens). Toda sub-view re-renderizável por conta própria precisa limpar.
+Verificado com Playwright: 10 entradas, 4 grupos de data, filtro isola a área
+sem empilhar, expand abre o detail, Resumir troca p/ caderno + envia o prompt.
+Deploy: só reload (biso.js/biso.css/json fora do shell do SW).
+
+
+## 2026-07-16 — FIN: visual do item sem meta — iterações e decisão
+
+Experimentei 3 alternativas ao anel neutro do item sem provisão; nenhuma
+agradou o Diego, que pediu voltar ao anel. **Estado final = a v1** (anel `.free`
+com "–", sub "R$ X · livre (sem meta)"). As tentativas descartadas (todas
+revertidas, sem resquício no código): (a) disco de moeda com valor compacto
+`compactBRL`; (b) minimalista sem círculo com barrinha de acento + valor herói;
+(c) barra comparativa (peso do gasto no quadro, via `maxDone`). Aprendizado:
+preferência do Diego é manter o anel; **não re-experimentar sem pedido dele**.
+
+## 2026-07-16 — FIN fix: categoria sem provisão não é "estouro"
+
+Bug relatado pelo Diego: item de custo sem valor provisionado (ex.: "diversos",
+"roupinhas" com `amount:0`) mas com gasto aparecia como anel vermelho 100% +
+"estourou R$ X". `_provRow` (`finance.js`) fazia `ratio = done>0 ? 1 : 0` e
+`over = done > plan+0.005` — com `plan=0` isso é sempre estouro. Conceitualmente
+errado: sem meta própria não há o que estourar; o teto real é o do envelope
+(bucket), que já conta esse gasto.
+
+Fix: flag `noPlan = !(plan>0)` → estado NEUTRO. Anel classe `.free` com "–"
+(sem %), sub "R$ X · livre (sem meta)", sem vermelho. Itens COM meta seguem
+iguais (%/restam/near/over). Verificado no app real: free (Roupinhas/Diversos),
+over real preservado (Claude Max 107%, Comprinhas Gabi 143%), normais intactos.
+
+Mesmo estado propagado à **vista expandida de lançamentos** (`_renderTxSublist`,
+agora recebe `plan`/`done`): cabeçalho `.fin-bud-subhead` espelha o anel —
+"livre (sem meta)" + botão "＋ definir meta" (abre `_manageMode`) quando sem
+provisão; "R$ done de R$ plan · restam/estourou" quando há meta. Verificado:
+Farmácia (com meta) mostra "restam R$ 134,11" sem botão; Diversos mostra livre
++ definir meta. NÃO afeta `_renderBucketTxs` (bucket sempre tem alocação).
+
+**Não mexido de propósito:** o over de nível de BUCKET (`_envA`, ~linha 2410)
+usa o mesmo padrão, mas ali 0-alocação-com-gasto É estouro real (orçou 0%,
+gastou) — comportamento correto do método AUVP. Deploy: só reload.
+
+
+## 2026-07-16 — FIN: campo US$ no avulso + toggle "🪙 Vai para investimento"
+
+**Campo US$ sempre visível** (2ª iteração, pedido do Diego): no "+ Avulso",
+para gasto OU receita, um campo "US$ (opcional)" converte pela cotação de
+planejamento (`profile.fx.BRLperUSD`) e preenche o valor em R$ na hora
+(hint "= R$ X (cotação Y)"). O ledger continua BRL-only; o US$ digitado vira
+anotação automática na descrição — "Freelance (US$ 500)" — p/ rastreabilidade.
+Sem cotação no perfil, o campo não aparece.
+
+
+Feedback do Diego: ter que digitar categoria com sufixo `-lib` é encanamento
+interno vazando pra UI. Agora o formulário "+ Avulso" (`finance.js`,
+`_buildSheet`), quando o tipo é **Receita**, mostra o toggle
+"🪙 Vai para investimento" (fora da renda do mês · cria o aporte junto):
+- campo **US$ opcional** converte pela cotação de planejamento
+  (`profile.fx.BRLperUSD`) e preenche o valor em R$;
+- chips de **objetivo** (abertos: `current < target`; 1º pré-selecionado);
+- no salvar: sufixa `-lib` na categoria por baixo dos panos (categoria padrão
+  `freelance` se vazia) e cria o **aporte irmão** (expense, bucket liberdade,
+  `goalId` + `creditGoal:true` — o servidor credita o objetivo convertendo
+  p/ a moeda dele). Um formulário, um toque, dois lançamentos.
+
+**Pegadinha:** dentro do `_buildSheet` a const `profile` só é declarada no
+bloco de chips — código inserido ANTES dela precisa de cópia própria
+(`prof`); referência direta dá TDZ e mata o sheet inteiro (achado no teste
+e2e: botão "+ Avulso" existia, sheet não). Verificado com Playwright no app
+REAL autenticado (BISA.api stubado p/ não gravar): payloads exatos dos 2
+POSTs conferidos. Deploy: só reload (finance.js fora do shell do SW).
+
+
 Registro por feature para sessões futuras (Claude ou humano) retomarem o
 contexto sem reler diffs. Entradas mais novas no topo. Formato: o que é,
 onde vive, decisões tomadas e pegadinhas — não o diff (isso é do git).
