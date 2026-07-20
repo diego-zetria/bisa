@@ -70,16 +70,21 @@
   // Tema do CADERNO (independente do tema do shell): '' = Tinta · dia (Flexoki),
   // 'noite' = Tinta · noite, 'deck' = cyberdeck néon legado. Alternador ◐ no rodapé.
   const NB_THEME_KEY = 'biso.nb.theme';
-  const NB_THEMES = [{ id: '', name: 'Tinta · dia' }, { id: 'noite', name: 'Tinta · noite' }, { id: 'deck', name: 'Cyberdeck' }];
+  const NB_THEMES = [{ id: '', name: 'Tinta · dia' }, { id: 'noite', name: 'Tinta · noite' }, { id: 'claude', name: 'Tinta · Claude' }, { id: 'claude-noite', name: 'Tinta · Claude noite' }, { id: 'deck', name: 'Cyberdeck' }];
   function nbTheme() { try { return localStorage.getItem(NB_THEME_KEY) || ''; } catch { return ''; } }
   function applyNbTheme(id) {
-    if (nbWrap) { nbWrap.classList.toggle('nb-noite', id === 'noite'); nbWrap.classList.toggle('nb-deck', id === 'deck'); }
+    if (nbWrap) {
+      nbWrap.classList.toggle('nb-noite', id === 'noite');
+      nbWrap.classList.toggle('nb-deck', id === 'deck');
+      nbWrap.classList.toggle('nb-claude', id === 'claude');
+      nbWrap.classList.toggle('nb-claude-noite', id === 'claude-noite');
+    }
     try { localStorage.setItem(NB_THEME_KEY, id); } catch {}
   }
 
   // Tema
   const THEME_KEY = 'biso_theme';
-  const THEMES = [{ id: '', name: 'Padrão' }, { id: 'matrix', name: 'Matrix' }, { id: 'escuro', name: 'Escuro' }, { id: 'sepia', name: 'Sépia' }, { id: 'contraste', name: 'Alto contraste' }];
+  const THEMES = [{ id: '', name: 'Padrão' }, { id: 'claude', name: 'Claude' }, { id: 'claude-noite', name: 'Claude · noite' }, { id: 'matrix', name: 'Matrix' }, { id: 'escuro', name: 'Escuro' }, { id: 'sepia', name: 'Sépia' }, { id: 'contraste', name: 'Alto contraste' }];
   function currentTheme() { try { return localStorage.getItem(THEME_KEY) || ''; } catch { return ''; } }
   function applyTheme(id) { if (root) root.setAttribute('data-theme', id || ''); try { localStorage.setItem(THEME_KEY, id || ''); } catch {} }
 
@@ -104,7 +109,8 @@
 
   // ── Shell ──────────────────────────────────────────────────────────────
   const VIEWS = [
-    { id: 'caderno', label: 'Caderno' }, { id: 'notas', label: 'Notas' }, { id: 'canvas', label: 'Canvas' }, { id: 'fit', label: 'Fit' },
+    { id: 'caderno', label: 'Caderno' }, { id: 'ziggy', label: '⚡ Ziggy' }, { id: 'notas', label: 'Notas' }, { id: 'canvas', label: 'Canvas' }, { id: 'fit', label: 'Fit' },
+    { id: 'evolucao', label: '✨ Evolução' },
     { id: 'journal', label: 'Diário' }, { id: 'files', label: 'Arquivos' }, { id: 'ask', label: 'Buscar' }, { id: 'gain', label: 'GAIN' },
   ];
 
@@ -142,6 +148,7 @@
     if (currentView === 'notas' && window.BISO_NOTAS) window.BISO_NOTAS.unmount();   // limpa listeners da escrita
     if (currentView === 'canvas' && window.BISO_CANVAS) window.BISO_CANVAS.unmount();
     if (currentView === 'fit' && window.BISO_FIT) window.BISO_FIT.unmount();
+    if (currentView === 'ziggy' && window.BISA.screens.ziggy) window.BISA.screens.ziggy.unmount();
     currentView = id;
     root.querySelectorAll('.biso-tab').forEach((b, i) => b.classList.toggle('active', VIEWS[i].id === id));
     renderView();
@@ -149,15 +156,133 @@
   function renderView() {
     if (currentView !== 'caderno') { nbScroll = nbPage = nbStatus = nbInterrupt = nbWrap = nbFoot = null; }
     contentEl.innerHTML = '';
-    if (radialFab) radialFab.style.display = (currentView === 'notas' || currentView === 'canvas' || currentView === 'fit') ? 'none' : '';   // FAB de ações é do dev-chat
+    if (radialFab) radialFab.style.display = (currentView === 'notas' || currentView === 'canvas' || currentView === 'fit' || currentView === 'evolucao' || currentView === 'ziggy') ? 'none' : '';   // FAB de ações é do dev-chat
     if (currentView === 'caderno') renderNotebook();
     else if (currentView === 'notas') { if (window.BISO_NOTAS) window.BISO_NOTAS.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">notas.js não carregou.</p>'; }
     else if (currentView === 'canvas') { if (window.BISO_CANVAS) window.BISO_CANVAS.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">canvas.js não carregou.</p>'; }
     else if (currentView === 'fit') { if (window.BISO_FIT) window.BISO_FIT.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">fit.js não carregou.</p>'; }
+    // Ziggy (cockpit de trabalho) mora aqui como sub-aba (decisão 2026-07-20);
+    // a tela se registra em BISA.screens e precisa de um scroller próprio
+    // (biso-content é overflow:hidden).
+    else if (currentView === 'ziggy') {
+      const zs = window.BISA.screens.ziggy;
+      if (zs) { const sc = elx('div', 'biso-scroll'); contentEl.appendChild(sc); zs.mount(sc); }
+      else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">ziggy.js não carregou.</p>';
+    }
+    else if (currentView === 'evolucao') renderEvolucao();
     else if (currentView === 'journal') renderJournal();
     else if (currentView === 'files') renderFiles();
     else if (currentView === 'ask') renderAsk();
     else if (currentView === 'gain') renderGain();
+  }
+
+  // ── EVOLUÇÃO ───────────────────────────────────────────────────────────
+  // Changelog amigável e interativo (public/changelog-feed.json, curado pelo
+  // Claude). Timeline cronológica, filtro por área, toque expande o detalhe,
+  // selo "novo" (≤10 dias). Botão "✨ Resumir" reusa o caderno (Claude narra).
+  let evoFilter = null;   // área selecionada no filtro (null = todas)
+  async function renderEvolucao() {
+    contentEl.innerHTML = '';   // re-render (filtro) é chamado direto, fora do renderView que limpa
+    const scroll = elx('div', 'biso-scroll');
+    scroll.innerHTML = '<p class="biso-muted">Carregando evolução…</p>';
+    contentEl.appendChild(scroll);
+    let feed;
+    try { feed = await BISA.api('/changelog-feed.json'); }
+    catch (e) { scroll.innerHTML = `<p class="biso-muted">Não consegui carregar o histórico (${esc(e.message)}).</p>`; return; }
+    const areas = feed.areas || {};
+    const entries = (feed.entries || []).slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const en = cadernoLang === 'en';
+    scroll.innerHTML = '';
+
+    // cabeçalho
+    const head = elx('div', 'evo-head');
+    head.innerHTML = `<div class="evo-h-tt">${en ? 'How the system is evolving' : 'Como o sistema evolui'}</div>` +
+      `<div class="evo-h-sub">${entries.length} ${en ? 'updates' : 'novidades'} · ${en ? 'updated' : 'atualizado'} ${fmtEvoDate(feed.updated, en)}</div>`;
+    const resume = elx('button', 'evo-resume', '✨ ' + (en ? 'Summarize for me' : 'Resumir pra mim'));
+    onTap(resume, () => {
+      const recent = entries.slice(0, 8).map((x) => `- ${x.date} · ${x.area}: ${x.title} — ${x.summary}`).join('\n');
+      const prompt = (en
+        ? 'Read this changelog of my own system (bisa) and tell me, like a friendly story, how it has been evolving lately — what changed, why it matters to me, and what stands out. Be concise.\n\n'
+        : 'Leia este changelog do meu próprio sistema (bisa) e me conte, como uma história curta e amigável, como ele vem evoluindo — o que mudou, por que importa pra mim e o que se destaca. Seja conciso.\n\n') + recent;
+      commitText(prompt);
+    });
+    head.appendChild(resume);
+    scroll.appendChild(head);
+
+    // filtro por área (chips)
+    const usedAreas = [...new Set(entries.map((x) => x.area))];
+    const filterRow = elx('div', 'evo-filters');
+    const mkChip = (label, val, emoji) => {
+      const c = elx('button', 'evo-chip' + ((val === evoFilter) ? ' on' : ''), (emoji ? emoji + ' ' : '') + label);
+      onTap(c, () => { evoFilter = val; renderEvolucao(); });
+      return c;
+    };
+    filterRow.appendChild(mkChip(en ? 'All' : 'Todas', null));
+    usedAreas.forEach((a) => filterRow.appendChild(mkChip(a, a, (areas[a] || {}).emoji)));
+    scroll.appendChild(filterRow);
+
+    // timeline agrupada por data
+    const shown = entries.filter((x) => !evoFilter || x.area === evoFilter);
+    if (!shown.length) { scroll.appendChild(elx('p', 'biso-muted', en ? 'Nothing here yet.' : 'Nada por aqui ainda.')); return; }
+    const tl = elx('div', 'evo-timeline');
+    let lastDate = null;
+    const now = Date.now();
+    shown.forEach((x) => {
+      if (x.date !== lastDate) {
+        const dh = elx('div', 'evo-date');
+        dh.appendChild(elx('span', 'evo-date-abs', fmtEvoDate(x.date, en)));
+        dh.appendChild(elx('span', 'evo-ago', relTime(x.date, en)));
+        tl.appendChild(dh);
+        lastDate = x.date;
+      }
+      const ac = (areas[x.area] || {}).color || 'var(--biso-primary)';
+      const fresh = (now - Date.parse(x.date + 'T00:00:00')) < 10 * 864e5;
+      const item = elx('div', 'evo-item');
+      item.style.setProperty('--evo-c', ac);
+      const badge = `<span class="evo-badge" style="background:${ac}">${esc(x.area)}</span>`;
+      const tag = x.tag ? `<span class="evo-tag evo-tag-${esc(x.tag)}">${esc(x.tag)}</span>` : '';
+      const novo = fresh ? `<span class="evo-new">${en ? 'new' : 'novo'}</span>` : '';
+      item.innerHTML =
+        `<div class="evo-dot">${x.emoji || '•'}</div>` +
+        `<div class="evo-body">` +
+          `<div class="evo-meta">${badge}${tag}${novo}</div>` +
+          `<div class="evo-title">${esc(x.title)}</div>` +
+          `<div class="evo-summary">${esc(x.summary)}</div>` +
+          (x.detail ? `<div class="evo-detail">${esc(x.detail)}</div>` : '') +
+        `</div>`;
+      if (x.detail) {
+        item.classList.add('has-detail');
+        onTap(item, () => item.classList.toggle('open'));
+      }
+      tl.appendChild(item);
+    });
+    scroll.appendChild(tl);
+  }
+  // "2026-07-16" → "16 jul" (ou "Jul 16" em EN); tolera valor ausente
+  function fmtEvoDate(iso, en) {
+    if (!iso) return '';
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso); if (!m) return iso;
+    const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+    const mesesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = +m[3], mi = +m[2] - 1;
+    return en ? `${mesesEn[mi]} ${d}` : `${d} ${meses[mi]}`;
+  }
+  // "há quanto tempo": hoje/ontem → 2–30 dias → meses → anos (dias inteiros,
+  // ancorados na meia-noite local pra não escorregar pela hora do dia)
+  function relTime(iso, en) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); if (!m) return '';
+    const then = new Date(+m[1], +m[2] - 1, +m[3]);
+    const now = new Date(); const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const days = Math.round((today - then) / 864e5);
+    if (days <= 0) return en ? 'today' : 'hoje';
+    if (days === 1) return en ? 'yesterday' : 'ontem';
+    if (days <= 30) return en ? `${days} days ago` : `há ${days} dias`;
+    if (days < 365) {
+      const mo = Math.max(1, Math.round(days / 30));
+      return en ? `${mo} month${mo > 1 ? 's' : ''} ago` : `há ${mo} ${mo > 1 ? 'meses' : 'mês'}`;
+    }
+    const yr = Math.floor(days / 365);
+    return en ? `${yr} year${yr > 1 ? 's' : ''} ago` : `há ${yr} ${yr > 1 ? 'anos' : 'ano'}`;
   }
 
   // ── CADERNO ────────────────────────────────────────────────────────────
@@ -175,6 +300,7 @@
       <button class="biso-icon-btn" data-vozloop title="Conversa por voz">🗣</button>
       <button class="con-proj" data-proj>◈ …</button>
       <button class="con-proj" data-lang>🌐 …</button>
+      <button class="con-proj" data-estudo title="Modo Estudo">📚</button>
       <span class="biso-nb-status" data-status></span><span class="spacer" style="flex:1"></span>
       <button class="biso-icon-btn" data-snd title="Som ao terminar">🔔</button>
       <button class="biso-icon-btn" data-font title="Tamanho da fonte">Aa</button>
@@ -201,6 +327,9 @@
         : 'Conversa por voz desligada.');
     });
     onTap(foot.querySelector('[data-lang]'), () => setCadernoLang(cadernoLang === 'en' ? 'pt' : 'en'));
+    onTap(foot.querySelector('[data-estudo]'), toggleEstudo);
+    fetchEstudo();
+    paintNotePin();
     paintLangChips(); fetchCadernoLang();
     const sndBtn = foot.querySelector('[data-snd]');
     const paintSnd = () => { sndBtn.textContent = doneSndOn() ? '🔔' : '🔕'; sndBtn.classList.toggle('off', !doneSndOn()); };
@@ -441,6 +570,14 @@
       if (tb.closest('.nb-tbl-scroll')) return;
       const w = elx('div', 'nb-tbl-scroll');
       tb.before(w); w.appendChild(tb);
+      // coluna cortada sem nenhuma pista (vídeo 2026-07-19: o "Status" da
+      // tabela ficou oculto até o usuário descobrir o swipe sozinho)
+      requestAnimationFrame(() => {
+        if (tb.scrollWidth > w.clientWidth + 4) {
+          w.classList.add('cut');
+          w.addEventListener('scroll', () => w.classList.remove('cut'), { once: true, passive: true });
+        }
+      });
     });
     body.querySelectorAll('pre').forEach((pre) => {
       if (pre.querySelector('.nb-copy') || !pre.textContent.trim()) return;
@@ -761,7 +898,10 @@
   let cadernoLang = localStorage.getItem('biso.ditado.lang') === 'en' ? 'en' : 'pt';
   function paintLangChips() {
     const lbl = '🌐 ' + cadernoLang.toUpperCase();
-    document.querySelectorAll('[data-lang], .wp-lang').forEach((b) => { b.textContent = lbl; });
+    document.querySelectorAll('[data-lang]').forEach((b) => { b.textContent = lbl; });
+    // no pad o rótulo diz o que a pill controla — "EN" seco ao lado do teclado
+    // PT do sistema lia como contradição (vídeo 2026-07-19)
+    document.querySelectorAll('.wp-lang').forEach((b) => { b.textContent = '🌐 resposta ' + cadernoLang.toUpperCase(); });
   }
   async function fetchCadernoLang() {
     try {
@@ -780,6 +920,62 @@
     BISA.api('/biso-chat/lang', { method: 'POST', json: { lang: cadernoLang } })
       .catch(() => BISA.toast('Não salvou no servidor — ditado trocado mesmo assim.'));
     BISA.toast(cadernoLang === 'en' ? 'Caderno em inglês — ditado e respostas.' : 'Caderno em português — ditado e respostas.');
+  }
+
+  // ── Modo Estudo (📚) ──────────────────────────────────────────────────────
+  // Sessão de pesquisa/aprendizado: o servidor injeta um system prompt que
+  // manda o Claude manter uma nota-guia viva no vault SEM pedir permissão a
+  // cada turno — nos vídeos 2026-07-19 o usuário gastou ~80s escrevendo "vá
+  // documentando tudo em um note" e depois confirmou 4 ofertas por chip.
+  let estudoOn = false;
+  function paintEstudo() {
+    const b = nbWrap && nbWrap.querySelector('[data-estudo]');
+    if (b) { b.textContent = estudoOn ? '📚 estudo' : '📚'; b.classList.toggle('on', estudoOn); }
+  }
+  async function fetchEstudo() {
+    try { const r = await BISA.api('/biso-chat/mode'); estudoOn = r && r.mode === 'estudo'; } catch {}
+    paintEstudo();
+  }
+  async function toggleEstudo() {
+    estudoOn = !estudoOn;
+    paintEstudo();
+    try { await BISA.api('/biso-chat/mode', { method: 'POST', json: { mode: estudoOn ? 'estudo' : '' } }); }
+    catch (e) { estudoOn = !estudoOn; paintEstudo(); BISA.toast('Erro: ' + e.message); return; }
+    BISA.toast(estudoOn ? 'Modo Estudo: o Claude mantém a nota-guia sozinho.' : 'Modo Estudo desligado.');
+  }
+
+  // ── Nota fixada (📌 última nota do vault tocada na sessão) ────────────────
+  // O chip "arquivos deste turno" fica preso ao card e rola para longe; o
+  // usuário abriu o preview 3x nos vídeos. A última .md criada/editada vira um
+  // pill fixo no topo do caderno, com hora relativa, abrindo o preview em 1 toque.
+  let notePin = null;   // { path, at }
+  function scanNotePin() {
+    for (let i = convo.length - 1; i >= 0; i--) {
+      const m = convo[i];
+      if (m.role !== 'claude') continue;
+      for (const t of (m.tools || []).slice().reverse()) {
+        if (toolMsgKey(t.name) !== 'edit') continue;
+        const f = t.detail && (t.detail.file_path || t.detail.path || t.detail.notebook_path);
+        if (f && /\.md$/i.test(String(f))) return { path: String(f), at: m._doneAt || 0 };
+      }
+    }
+    return null;
+  }
+  const relMin = (at) => {
+    const min = Math.round((Date.now() - at) / 60000);
+    return min < 1 ? 'agora' : min < 60 ? `há ${min}min` : `há ${Math.round(min / 60)}h`;
+  };
+  function paintNotePin() {
+    if (!nbWrap) return;
+    let bar = nbWrap.querySelector('.biso-notepin');
+    if (!notePin) notePin = scanNotePin();
+    if (!notePin) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = elx('button', 'biso-notepin');
+      onTap(bar, () => notePin && openFilePreview(notePin.path));
+      nbWrap.insertBefore(bar, nbWrap.firstChild);
+    }
+    bar.textContent = '📌 ' + notePin.path.split('/').pop() + (notePin.at ? ' · ' + relMin(notePin.at) : '');
   }
 
   // ── Foco do caderno (projeto da sessão) ───────────────────────────────────
@@ -809,7 +1005,7 @@
     try {
       const r = await BISA.api('/biso-chat/project', { method: 'POST', json: { id } });
       chatFocus.current = r.current;
-      convo = []; streaming = null;   // transcript local zera — a sessão do foco retoma via --resume
+      convo = []; streaming = null; notePin = null;   // transcript local zera — a sessão do foco retoma via --resume
       try { localStorage.removeItem(CONVO_KEY); } catch {}
       renderView();
       BISA.toast('Foco: ' + focusName());
@@ -888,6 +1084,11 @@
       if (/search/i.test(name) && d.query) return name + ' · “' + String(d.query).slice(0, 44) + '”';
       if (d.url) return name + ' · ' + new URL(d.url).hostname.replace(/^www\./, '');
       const f = d.file_path || d.path || d.notebook_path;
+      // gravação de nota .md nomeada pelo que É — "GRINDING XP" durante a
+      // escrita da nota lia como travamento (vídeo 2026-07-19, ~16s mudos)
+      if (f && /\.md$/i.test(String(f)) && /edit|write/i.test(name)) {
+        return (cadernoLang === 'en' ? '✍ writing the note · ' : '✍ escrevendo a nota · ') + String(f).split('/').pop();
+      }
       if (f) return name + ' · ' + String(f).split('/').pop();
       if (/bash/i.test(name) && (d.description || d.command)) return name + ' · ' + String(d.description || d.command).slice(0, 44);
     } catch {}
@@ -1003,14 +1204,49 @@
     saveConvo();
     setStatus('running');
     armDoneSound();   // ainda dentro do gesto do envio (iOS)
+    streaming.sentText = text;
     BISA.wsSend({ type: 'biso.llm.send', text });
+    armTurnWatchdog();
     // mostra a pergunta + começo da resposta UMA vez; não autoscrolla durante o stream
     ue.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  // ── watchdog de turno morto ───────────────────────────────────────────
+  // Vídeo 2026-07-19: um chip tocado gerou card "…" que ficou 80s+ sem NENHUM
+  // evento (envio perdido no WS ou sessão ocupada) e sem aviso — o usuário
+  // contornou reescrevendo o pedido à mão. Se nada do SERVIDOR chegar em 12s,
+  // o card vira um botão de reenvio em vez de reticências eternas.
+  let turnWatchdog = 0;
+  function armTurnWatchdog() {
+    clearTimeout(turnWatchdog);
+    const st = streaming;
+    if (!st) return;
+    turnWatchdog = setTimeout(() => {
+      if (!st || streaming !== st || st.gotServer) return;
+      streaming = null; curTool = null; curToolDetail = null;
+      setStatus('idle');
+      const body = st.el && st.el.querySelector('.resp-body');
+      if (!body || !st.sentText) return;
+      body.innerHTML = '';
+      const b = elx('button', 'nb-dead-retry', '⚠ sem resposta do servidor — tocar para reenviar');
+      onTap(b, () => {
+        b.remove();
+        st.gotServer = false;
+        st.msg._blkEls = null;
+        streaming = st;
+        paintClaude(st.el, st.msg, true);
+        setStatus('running');
+        BISA.wsSend({ type: 'biso.llm.send', text: st.sentText });
+        armTurnWatchdog();
+      });
+      body.appendChild(b);
+    }, 12000);
   }
 
   // ── WS (biso.llm.*) ───────────────────────────────────────────────────
   function handleWs(ev) {
     if (!ev || typeof ev.type !== 'string' || !ev.type.startsWith('biso.llm')) return;
+    if (streaming) streaming.gotServer = true;   // qualquer evento = servidor vivo (desarma o watchdog)
     switch (ev.type) {
       case 'biso.llm.state': setStatus(ev.state); break;
       case 'biso.llm.text': if (ev.delta) streamDelta(ev.delta); break;
@@ -1093,6 +1329,8 @@
         }
       }
       fetchFollowups(done.msg);
+      done.msg._doneAt = Date.now();
+      notePin = null; paintNotePin();   // re-escaneia: o turno pode ter tocado a nota
       saveConvo();
       // resposta terminou fora da tela → avisa sem roubar o scroll
       if (nbScroll) {
@@ -1104,10 +1342,17 @@
   function errorStream(message) {
     voiceReplyPending = false;   // erro não dispara leitura nem reabre o mic
     if (streamRaf) { cancelAnimationFrame(streamRaf); streamRaf = 0; }
-    if (streaming && streaming.el) paintClaude(streaming.el, streaming.msg, false);
+    const cur = streaming;
+    if (cur && cur.el) paintClaude(cur.el, cur.msg, false);
     streaming = null; curTool = null; curToolDetail = null;
     setStatus('idle');
     saveConvo();
+    // erro num card ainda vazio entra NO card (apêndice no fim da página ficava
+    // fora da tela — vídeo 2026-07-19: card "…" sem nenhum aviso visível)
+    if (cur && cur.el && !hasRealText(cur.msg.text)) {
+      const b = cur.el.querySelector('.resp-body');
+      if (b) { b.innerHTML = ''; b.appendChild(elx('div', 'biso-nb-err', '⚠ ' + (message || 'Erro.'))); return; }
+    }
     if (nbPage) { const e = elx('div', 'biso-nb-err', '⚠ ' + (message || 'Erro.')); nbPage.appendChild(e); }
   }
 
@@ -1329,23 +1574,61 @@
   // a instrução: "encurta isso", "explica essa parte"...). Instrução livre —
   // sem gramática de comandos (achado da pesquisa: contexto > comandos).
   function hideSelChip() { if (selChip) { selChip.remove(); selChip = null; } }
+  // porta-trecho: a seleção some fácil (fechar o preview da nota, toque fora,
+  // callout nativo do iOS) e o trecho ia junto — vídeo 2026-07-19: o usuário
+  // refez a MESMA seleção do zero (~24s). O último trecho selecionado fica num
+  // pill persistente acima do rodapé até ser usado ou dispensado.
+  let pendingQuote = null, quoteBar = null;
+  function hideQuoteBar() { if (quoteBar) { quoteBar.remove(); quoteBar = null; } }
+  function useQuote(txt, how) {
+    if (how === 'fio' && (sessionState === 'running' || sessionState === 'starting')) { BISA.toast('Aguarde o Claude terminar.'); return; }
+    pendingQuote = null; hideQuoteBar(); hideSelChip();
+    try { window.getSelection().removeAllRanges(); } catch {}
+    const ov = document.querySelector('.nb-file-ov'); if (ov) ov.remove();   // sair do preview: a ação continua no caderno
+    // "puxar o fio" = citação pura como turno — padrão real de uso (2 de 2
+    // citações dos vídeos foram enviadas sem instrução, e o Claude entendeu)
+    if (how === 'fio') commitText('> ' + txt.replace(/\n+/g, '\n> '));
+    else openWritePad({ quote: txt });
+  }
+  function showQuoteBar() {
+    if (!pendingQuote || currentView !== 'caderno' || !nbWrap) return;
+    if (quoteBar && quoteBar.isConnected && quoteBar._txt === pendingQuote) return;
+    hideQuoteBar();
+    const txt = pendingQuote;
+    quoteBar = elx('div', 'biso-quotebar');
+    quoteBar._txt = txt;
+    quoteBar.appendChild(elx('span', 'qb-txt', '❝ ' + (txt.length > 64 ? txt.slice(0, 64) + '…' : txt)));
+    const fio = elx('button', 'qb-btn', '▶ puxar o fio');
+    const wr = elx('button', 'qb-btn', '✎ escrever');
+    const x = elx('button', 'qb-x', '✕');
+    onTap(fio, () => useQuote(txt, 'fio'));
+    onTap(wr, () => useQuote(txt, 'pad'));
+    onTap(x, () => { pendingQuote = null; hideQuoteBar(); });
+    quoteBar.append(fio, wr, x);
+    nbWrap.appendChild(quoteBar);
+  }
   function checkSelection() {
     hideSelChip();
     if (!nbPage || currentView !== 'caderno') return;
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { showQuoteBar(); return; }
     const txt = String(sel).trim();
     if (txt.length < 3 || txt.length > 4000) return;
     const n = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
     if (!n || !n.closest || !n.closest('.resp-body')) return;
+    hideQuoteBar();
+    pendingQuote = txt;
     const r = sel.getRangeAt(0).getBoundingClientRect();
-    const chip = elx('button', 'biso-selchip', '✎ usar trecho');
-    onTap(chip, () => {
-      hideSelChip();
-      try { window.getSelection().removeAllRanges(); } catch {}
-      openWritePad({ quote: txt });
-    });
-    (nbWrap || document.body).appendChild(chip);
+    const chip = elx('div', 'biso-selchip');
+    const fio = elx('button', 'sc-btn', '▶ puxar o fio');
+    const wr = elx('button', 'sc-btn', '✎ escrever');
+    onTap(fio, () => useQuote(txt, 'fio'));
+    onTap(wr, () => useQuote(txt, 'pad'));
+    chip.append(fio, wr);
+    // dentro do preview da nota o chip fica NO overlay — no nbWrap ele nascia
+    // atrás do modal e só aparecia depois de fechar (vídeo 2026-07-19)
+    const host = n.closest('.nb-file-ov') || nbWrap || document.body;
+    host.appendChild(chip);
     chip.style.left = Math.max(8, Math.min(window.innerWidth - chip.offsetWidth - 8, r.left + r.width / 2 - chip.offsetWidth / 2)) + 'px';
     chip.style.top = Math.min(window.innerHeight - 64, r.bottom + 10) + 'px';
     selChip = chip;
@@ -1364,7 +1647,7 @@
     pad.innerHTML = `
       <div class="wp-kb"><span>⌨ ancore o teclado aqui</span></div>
       <div class="biso-nb-console wp-card">
-        <div class="con-head"><span class="con-lbl">✎ resposta</span><span class="con-sys">biso://caderno</span><button class="wp-lang"></button><span class="wp-count">0 palavras</span><button class="wp-send-mini" disabled>Enviar ↑</button></div>
+        <div class="con-head"><span class="con-lbl">✎ resposta</span><span class="con-sys">biso://caderno</span><button class="wp-lang"></button><span class="wp-count">0 palavras</span><button class="wp-mic-mini" title="Ditar">🎤</button><button class="wp-send-mini" disabled>Enviar ↑</button></div>
         <div class="biso-nb-input wp-box" contenteditable="true" data-ph="✎ Escreva aqui com a caneta…" autocapitalize="sentences" spellcheck="false"></div>
       </div>
       <div class="wp-predict"></div>
@@ -1387,9 +1670,17 @@
 
     const box = pad.querySelector('.wp-box'), live = pad.querySelector('.wp-live');
     const dock = pad.querySelector('.wp-dock'), count = pad.querySelector('.wp-count');
+    const openedAt = Date.now();
     // 'input' (não keydown) — é o que o Scribble dispara; ver nota do console
     box.addEventListener('input', () => {
       const t = box.innerText;
+      // traço acidental da Pencil logo ao abrir vira "'" via Scribble e conta
+      // como "1 palavra" (vídeo 2026-07-19) — descarta resíduo sem letra/número
+      if (Date.now() - openedAt < 900 && t.trim() && t.length <= 2 && !hasRealText(t)) {
+        box.innerHTML = ''; live.textContent = ''; count.textContent = '0 palavras';
+        try { localStorage.setItem(DRAFT_KEY, ''); } catch {}
+        return;
+      }
       live.textContent = t;
       live.classList.remove('clean');   // texto novo → a prévia limpa era de outro momento
       const n = t.trim() ? t.trim().split(/\s+/).length : 0;
@@ -1444,8 +1735,16 @@
       const seq = ++predSeq;
       try {
         const history = convo.filter((m) => m.role === 'user' && m.text).slice(-8).map((m) => m.text);
-        const r = await BISA.api('/biso-predict', { method: 'POST', json: { draft, history } });
+        // tema da conversa = fim da última resposta do Claude — sem isso as
+        // completações alucinavam programação ("React", "faça um commit") no
+        // meio de uma sessão sobre Copa do Mundo (vídeos 2026-07-19)
+        const lastClaude = [...convo].reverse().find((m) => m.role === 'claude' && m.text);
+        const topic = lastClaude ? lastClaude.text.split(SEG_RE).pop().replace(/\s+/g, ' ').trim().slice(0, 400) : '';
+        const r = await BISA.api('/biso-predict', { method: 'POST', json: { draft, history, topic } });
         if (seq !== predSeq || !pad.isConnected) return;
+        // rascunho mudou durante o voo → completações são do texto velho
+        // (chips quebrados "…ma sejam" nos vídeos 2026-07-19)
+        if (box.innerText.trim() !== draft) return;
         renderPredict(r, draft);
       } catch {}
     };
@@ -1534,6 +1833,9 @@
       setCadernoLang(cadernoLang === 'en' ? 'pt' : 'en');
       if (window.BISO_DITADO && window.BISO_DITADO.activeBtn() === mic) window.BISO_DITADO.restart();
     });
+    // 🎤 espelho no cabeçalho: o teclado flutuante do iPad cobria o "Ditar" de
+    // baixo (vídeo 2026-07-19: ~25s fuçando o menu do teclado até digitar)
+    onTap(pad.querySelector('.wp-mic-mini'), () => mic.click());
     // Rascunho pendente = pad morreu sem Enviar/Cancelar (re-render, reload,
     // crash) → restaura antes de qualquer ditado (vira o `base` da sessão 🎤).
     if (!opts.quote) {
@@ -1642,6 +1944,7 @@
       if (currentView === 'notas' && window.BISO_NOTAS) window.BISO_NOTAS.unmount();
       if (currentView === 'canvas' && window.BISO_CANVAS) window.BISO_CANVAS.unmount();
       if (currentView === 'fit' && window.BISO_FIT) window.BISO_FIT.unmount();
+      if (currentView === 'ziggy' && window.BISA.screens.ziggy) window.BISA.screens.ziggy.unmount();
       document.querySelectorAll('.biso-radial-overlay, .notas-ov, .cv-ov, .cv-imgview, .ia-root, .iae-root, .ia-notepop').forEach(o => o.remove());
       saveConvo();      // preserva o transcript p/ a próxima visita
       convo = []; streaming = null; sessionState = 'idle';
