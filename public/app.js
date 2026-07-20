@@ -95,10 +95,16 @@
   // ---- WS (eventos fs/pkm/llm/notify) ----
   const wsSubs = new Set();
   function onWs(fn) { wsSubs.add(fn); return () => wsSubs.delete(fn); }
-  let ws, wsTimer;
+  let ws, wsTimer, wsEverOpen = false;
   function connectWs() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    ws.onopen = () => {
+      // reconexão (não a 1ª conexão) → avisa as telas: um turno em andamento
+      // pode ter morrido junto com o servidor (detector de turno órfão do caderno)
+      if (wsEverOpen) for (const fn of wsSubs) { try { fn({ type: 'ws.reconnected' }); } catch {} }
+      wsEverOpen = true;
+    };
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       // recarga remota (Modo Anotar: dev aplicou uma mudança → a usuária vê na hora)

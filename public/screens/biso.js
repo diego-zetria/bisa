@@ -1313,25 +1313,58 @@
       const body = st.el && st.el.querySelector('.resp-body');
       if (!body || !st.sentText) return;
       body.innerHTML = '';
-      const b = elx('button', 'nb-dead-retry', '⚠ sem resposta do servidor — tocar para reenviar');
-      onTap(b, () => {
-        b.remove();
-        st.gotServer = false;
-        st.msg._blkEls = null;
-        streaming = st;
-        paintClaude(st.el, st.msg, true);
-        setStatus('running');
-        BISA.wsSend({ type: 'biso.llm.send', text: st.sentText });
-        armTurnWatchdog();
-      });
-      body.appendChild(b);
+      body.appendChild(deadRetryBtn(st, '⚠ sem resposta do servidor — tocar para reenviar'));
     }, 12000);
+  }
+  // botão de reenvio da rodada 6 (compartilhado: watchdog + turno órfão)
+  function deadRetryBtn(st, label) {
+    const b = elx('button', 'nb-dead-retry', label);
+    onTap(b, () => {
+      b.remove();
+      st.gotServer = false;
+      st.msg._blkEls = null;
+      streaming = st;
+      paintClaude(st.el, st.msg, true);
+      setStatus('running');
+      BISA.wsSend({ type: 'biso.llm.send', text: st.sentText });
+      armTurnWatchdog();
+    });
+    return b;
+  }
+
+  // ── detector de turno órfão (reconexão do WS) ─────────────────────────
+  // Bug 2026-07-20: um turno do caderno reiniciou o próprio servidor bisa; o
+  // claude filho morreu com o servidor, o WS reconectou num servidor sem sessão
+  // e o HUD ficou 22 min girando. O watchdog acima cobre só o INÍCIO do turno
+  // (nada chega após o envio); este cobre o MEIO: se o WS reconecta com
+  // streaming ativo e NENHUM biso.llm.* chega em 10s, o turno morreu junto.
+  // Não existe GET /llm/status nem estado de turno no `hello` do connect p/
+  // confirmar com o servidor — o timeout de 10s é o critério: numa reconexão
+  // normal (iPad dormiu/acordou) com turno vivo, o broadcast volta a entregar
+  // eventos em bem menos que isso e desarma o verificador (handleWs).
+  let orphanCheck = 0;
+  function armOrphanCheck() {
+    clearTimeout(orphanCheck); orphanCheck = 0;
+    const st = streaming;
+    if (!st) return;   // sem turno local em andamento → reconexão normal, nada a vigiar
+    orphanCheck = setTimeout(() => {
+      orphanCheck = 0;
+      if (streaming !== st) return;   // turno terminou/trocou nesse meio-tempo
+      // finaliza pelo caminho de erro existente; a fila (queuedTurn) NÃO
+      // dispara em erro — a pílula fica e o usuário decide (política do erro)
+      errorStream('o servidor reiniciou no meio do turno — o que foi feito até aqui está salvo no projeto; toque para continuar');
+      const body = st.el && st.el.querySelector('.resp-body');
+      if (body && st.sentText) body.appendChild(deadRetryBtn(st, '↻ tocar para continuar'));
+    }, 10000);
   }
 
   // ── WS (biso.llm.*) ───────────────────────────────────────────────────
   function handleWs(ev) {
-    if (!ev || typeof ev.type !== 'string' || !ev.type.startsWith('biso.llm')) return;
+    if (!ev || typeof ev.type !== 'string') return;
+    if (ev.type === 'ws.reconnected') { armOrphanCheck(); return; }   // WS caiu e voltou: turno pode ter morrido com o servidor
+    if (!ev.type.startsWith('biso.llm')) return;
     if (streaming) streaming.gotServer = true;   // qualquer evento = servidor vivo (desarma o watchdog)
+    if (orphanCheck) { clearTimeout(orphanCheck); orphanCheck = 0; }  // turno segue vivo após a reconexão
     switch (ev.type) {
       case 'biso.llm.state': setStatus(ev.state); break;
       case 'biso.llm.text': if (ev.delta) streamDelta(ev.delta); break;
