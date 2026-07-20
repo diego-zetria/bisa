@@ -610,8 +610,41 @@ app.use(makeNovelaBridge({ requireAuth, NOVELA_URL, NOVELA_TOKEN }).router);
 // projeto do biso e com as envs do biso injetadas. Os eventos llm.* dessa sessão
 // são renomeados p/ biso.llm.* para não colidir com o chat do bisa (mesmo broadcast).
 const makeBisoSession = require('./lib/llm/session');
+// Push de turno longo do caderno (vídeo 2026-07-20): execuções de 1-2+ min
+// deixavam o usuário só esperando olhando a tela. Quando um turno do caderno
+// termina com mais de 45s, avisa os dispositivos inscritos via Web Push.
+// Não há sinal pronto de "página visível/ativa" no WS (sem heartbeat), então
+// enviamos sempre que passa do limiar. Falha de push é silenciosa.
+const BISO_PUSH_MIN_MS = 45 * 1000;
+let bisoTurn = { startedAt: 0, text: '' };
+const bisoPushWatch = (obj) => {
+  try {
+    if (obj.type === 'llm.state' && obj.state === 'starting') {
+      bisoTurn = { startedAt: Date.now(), text: '' };
+    } else if (obj.type === 'llm.text' && obj.delta) {
+      // guarda a CAUDA do texto — a resposta final vem depois do último
+      // sentinela <!--biso-seg--> (fronteira pós-ferramenta do session.js)
+      bisoTurn.text = (bisoTurn.text + obj.delta).slice(-16000);
+    } else if (obj.type === 'llm.done' && bisoTurn.startedAt) {
+      const ms = Date.now() - bisoTurn.startedAt;
+      bisoTurn.startedAt = 0;
+      if (ms < BISO_PUSH_MIN_MS) return;
+      const seg = bisoTurn.text.split('<!--biso-seg-->').pop() || '';
+      const plain = seg
+        .replace(/```[\s\S]*?```/g, ' ')          // blocos de código
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')  // links → só o texto
+        .replace(/[*_`#>|-]+/g, ' ')              // ênfase/headers/tabelas
+        .replace(/\s+/g, ' ').trim();
+      const dur = `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+      const body = plain.slice(0, 90) + (plain.length > 90 ? '…' : '') + ` (${dur})`;
+      push.notify('Biso ✅ resposta pronta no caderno', body, { tag: 'biso-caderno', url: '/' })
+        .catch((e) => console.warn('[bisa/push] caderno:', e.message));
+    }
+  } catch (e) { console.warn('[bisa/push] caderno watch:', e.message); }
+};
 const bisoBroadcast = (obj) => {
   if (obj && typeof obj.type === 'string' && obj.type.startsWith('llm')) {
+    bisoPushWatch(obj);
     broadcast(Object.assign({}, obj, { type: 'biso.' + obj.type }));
   } else { broadcast(obj); }
 };
@@ -686,6 +719,10 @@ const writeChatLang = (lang) => writeChatMeta({ lang });
 // "quer que eu salve?" por chip).
 const readChatMode = () => (readChatMeta().mode === 'estudo' ? 'estudo' : '');
 const writeChatMode = (mode) => writeChatMeta({ mode: mode === 'estudo' ? 'estudo' : '' });
+// TL;DR primeiro (vídeo 2026-07-20): respostas longas chegavam com o veredito
+// no FINAL — no iPad o usuário rola muito até a conclusão. Instrução PERMANENTE
+// e SÓ do caderno (não vale p/ o chat do bisa nem p/ as Notas).
+const TLDR_PROMPT = `Quando sua resposta for longa e estruturada (mais de ~300 palavras OU 3+ seções), comece com um bloco "**TL;DR:**" de 2-3 linhas contendo a conclusão/veredito e a ação recomendada, ANTES das seções — o leitor está num iPad e rola muito até chegar ao veredito. Respostas curtas ficam como estão, sem TL;DR.`;
 const ESTUDO_PROMPT = `Modo Estudo ativo — o usuário está pesquisando/aprendendo um tema (não programando).
 - Mantenha UMA nota-guia viva desta sessão no vault Obsidian: crie-a na primeira resposta (nome descritivo em kebab-case) e ATUALIZE a mesma nota a cada turno com o que foi consolidado.
 - NÃO pergunte "quer que eu salve/adicione na nota?" — atualize direto e sinalize numa linha curta ("✅ nota atualizada: <o que entrou>").
@@ -702,7 +739,7 @@ const resolveBisoCwd = () => {
 
 const bisoSession = makeBisoSession({
   CWD: BISO_CHAT_CWD, getCwd: resolveBisoCwd, getLang: readChatLang, CLAUDE_CMD, USER_SHELL,
-  getExtraSystemPrompt: () => (readChatMode() === 'estudo' ? ESTUDO_PROMPT : ''),
+  getExtraSystemPrompt: () => TLDR_PROMPT + (readChatMode() === 'estudo' ? '\n\n' + ESTUDO_PROMPT : ''),
   broadcast: bisoBroadcast, dispatchNotification,
   extraEnv: { BISO_URL, BISO_TOKEN, BISO_JOURNAL },
   // O agente da aba Biso pode EXECUTAR ações no Mac pessoal (buscar arquivos,

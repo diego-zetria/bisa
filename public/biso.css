@@ -546,6 +546,13 @@
   box-shadow: var(--nb-btn-glow); }
 /* fim do ditado com texto pronto → chama o olho p/ o Enviar (envio segue manual) */
 .wp-actions .wp-send.attn { animation: send-attn 1.1s ease-in-out 5; }
+/* pad VAZIO: Ditar assume o visual primário (a voz é o caminho rápido) e o
+   Enviar vira ghost; com texto os dois voltam ao normal (toggle .pad-empty) */
+.wp-actions.pad-empty .wp-mic { background: var(--biso-primary); color: var(--biso-primary-ink);
+  border: none; font-weight: 700; box-shadow: var(--nb-btn-glow); }
+.wp-actions.pad-empty .wp-mic.active { background: var(--biso-negative); border-color: var(--biso-negative); color: #fff; }
+.wp-actions.pad-empty .wp-send { background: color-mix(in srgb, var(--biso-primary) 8%, transparent);
+  color: var(--biso-primary); border: 1px solid var(--biso-primary); box-shadow: none; font-weight: 400; }
 @keyframes send-attn { 50% { transform: scale(1.04);
   box-shadow: 0 0 22px color-mix(in srgb, var(--biso-primary) 65%, transparent); } }
 .wp-spacer { flex: 1; min-height: 8px; }
@@ -559,7 +566,7 @@
 /* chip de sugestão COM CARA DE BOTÃO — no vídeo 2026-07-15 as sugestões nunca
    foram tocadas: o tracejado transparente lia como decoração, não como ação. */
 .wp-pred-chip { background: color-mix(in srgb, var(--biso-primary) 10%, transparent);
-  color: var(--biso-ink); border: 1px solid color-mix(in srgb, var(--biso-primary) 40%, transparent);
+  color: var(--biso-ink); border: 1px solid var(--biso-primary);
   border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: .85rem; cursor: pointer; }
 .wp-pred-chip:active { background: color-mix(in srgb, var(--biso-primary) 22%, transparent); }
 /* limpar ditado com o Claude — modos por destino + volta ao bruto */
@@ -681,6 +688,11 @@
 .biso-nb-foot { display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--biso-line); background: var(--biso-surface); }
 .biso-nb-status { font-size: .72rem; color: var(--biso-ink-soft); letter-spacing: .12em; text-transform: uppercase; }
+/* fila de 1 turno — pílula discreta ao lado do status; toque devolve ao pad */
+.biso-queue-pill { background: color-mix(in srgb, var(--biso-primary) 10%, transparent);
+  color: var(--biso-primary); border: 1px dashed var(--biso-primary); border-radius: 999px;
+  font-size: .68rem; letter-spacing: .04em; padding: 4px 10px; min-height: 30px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42vw; flex: 0 1 auto; }
 
 /* ---- Menu radial (Pencil quick actions) ---- */
 .biso-radial-fab { position: fixed; right: 18px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
@@ -744,6 +756,14 @@
 .nb-proc-steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px;
   padding-bottom: 8px; border-bottom: 1px dashed var(--biso-line); font-size: .82rem; }
 
+/* ── mini-índice de resposta longa (≥3 headings) ─────────────────────────── */
+.nb-idx { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 2px 0 8px; margin-bottom: 10px; border-bottom: 1px dashed var(--biso-line); }
+.nb-idx-chip { flex: 0 0 auto; font-family: var(--biso-mono); font-size: .7rem;
+  color: var(--biso-ink-soft); background: transparent; border: 1px solid var(--biso-line);
+  border-radius: 999px; padding: 3px 10px; min-height: 28px; white-space: nowrap; cursor: pointer; }
+.nb-idx-fim { color: var(--biso-primary); border-color: color-mix(in srgb, var(--biso-primary) 45%, transparent); }
+
 /* ── arquivos do turno ───────────────────────────────────────────────────── */
 .nb-files { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; }
 .nb-files-lbl { font-size: .76rem; color: var(--biso-ink-soft); opacity: .8; margin-right: 2px; }
@@ -769,6 +789,11 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb-file-path { font-family: var(--biso-mono); font-size: .68rem;
   color: var(--biso-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-file-corp { background: color-mix(in srgb, var(--biso-primary) 12%, transparent);
+  color: var(--biso-primary); border: 1px solid color-mix(in srgb, var(--biso-primary) 45%, transparent);
+  border-radius: 999px; min-height: 38px; padding: 0 14px; font-size: .82rem;
+  cursor: pointer; flex: 0 0 auto; }
+.nb-file-corp:disabled { opacity: .4; cursor: default; }
 .nb-file-x { background: color-mix(in srgb, var(--biso-line) 45%, transparent);
   border: none; color: var(--biso-ink); font-size: 1rem; border-radius: 999px;
   cursor: pointer; width: 38px; height: 38px; flex: 0 0 auto; }

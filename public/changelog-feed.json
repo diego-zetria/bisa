@@ -34,6 +34,14 @@
  "entries": [
   {
    "date": "2026-07-20",
+   "area": "Caderno",
+   "emoji": "🎬",
+   "tag": "novo",
+   "title": "Rodada guiada pelo seu vídeo: 5 melhorias de fluxo no Caderno",
+   "summary": "Analisei seu screen recording de 11 min e apliquei: (1) chips de completar frase agora se mostram acionáveis com + e o 🎤 Ditar fica em destaque quando o pad está vazio; (2) chips novos '🧰 virar skill' e '📋 salvar runbook' aparecem junto das respostas rápidas quando um projeto está em foco — sua jogada recorrente em 1 toque; (3) dá para Enviar mesmo com o Claude trabalhando: a mensagem entra numa fila (pílula ⏳) e sai sozinha quando ele termina, e turnos com mais de 45s mandam push '✅ resposta pronta' pro iPad; (4) respostas longas ganham mini-índice de seções no topo + chip '⤓ fim' para pular ao veredito, e o Claude foi instruído a começar análises longas com um TL;DR de 2-3 linhas; (5) o leitor de arquivo ganhou o botão 📤 corp — qualquer artefato criado vai direto pro clipboard do Mac corp."
+  },
+  {
+   "date": "2026-07-20",
    "area": "Aparência",
    "emoji": "🎨",
    "tag": "novo",

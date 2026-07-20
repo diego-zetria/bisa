@@ -330,6 +330,7 @@
     onTap(foot.querySelector('[data-estudo]'), toggleEstudo);
     fetchEstudo();
     paintNotePin();
+    paintQueuePill();   // fila de 1 turno sobrevive ao re-render do rodapé
     paintLangChips(); fetchCadernoLang();
     const sndBtn = foot.querySelector('[data-snd]');
     const paintSnd = () => { sndBtn.textContent = doneSndOn() ? '🔔' : '🔕'; sndBtn.classList.toggle('off', !doneSndOn()); };
@@ -623,6 +624,7 @@
     box.innerHTML = `<div class="nb-file-head">` +
       `<span class="nb-file-ic">${fileIcon(name)}</span>` +
       `<div class="nb-file-tt"><span class="nb-file-name">${esc(name)}</span><span class="nb-file-path">${esc(absPath)}</span></div>` +
+      `<button class="nb-file-corp" title="enviar pro clipboard do corp" disabled>📤 corp</button>` +
       `<button class="nb-file-x">✕</button></div>` +
       `<div class="nb-file-bd biso-resp"><div class="resp-body"><span class="biso-muted">carregando…</span></div></div>`;
     // DENTRO do .biso-root: os tokens --biso-* (e o tema ativo) são escopados
@@ -633,9 +635,21 @@
     ov.addEventListener('click', () => ov.remove());
     box.addEventListener('click', (e) => e.stopPropagation());
     onTap(box.querySelector('.nb-file-x'), () => ov.remove());
+    // 📤 corp: manda o conteúdo do arquivo pro clipboard do Mac corporativo
+    // (via ziggy) — habilita só depois que o conteúdo carrega
+    const corpBtn = box.querySelector('.nb-file-corp');
+    let fileText = null;
+    onTap(corpBtn, async () => {
+      if (fileText == null) return;
+      try {
+        await BISA.api('/ziggy/clipboard', { method: 'POST', json: { src: 'corp', text: fileText } });
+        BISA.toast('no clipboard do corp ✓ — é só Cmd+V lá');
+      } catch (e) { BISA.toast('⚠ corp: ' + (e.message || 'falhou')); }
+    });
     const bd = box.querySelector('.resp-body');
     try {
       const r = await BISA.api('/biso-chat/file?path=' + encodeURIComponent(absPath));
+      fileText = r.content; corpBtn.disabled = false;
       if (/\.(md|markdown)$/i.test(r.name)) {
         bd.innerHTML = BISA.renderMarkdown(r.content);
         enhanceRespBody(bd);   // tabelas roláveis + copiar nos fences, como nos cards
@@ -644,6 +658,26 @@
         bd.innerHTML = ''; bd.appendChild(pre);
       }
     } catch (e) { bd.innerHTML = `<span class="biso-muted">⚠ ${esc(e.message || 'não deu para abrir')}</span>`; }
+  }
+
+  // mini-índice p/ respostas longas (≥3 headings h2/h3): linha de chips com
+  // scroll horizontal no TOPO da resposta — 1 por seção + "⤓ fim" direto no
+  // veredito (análise de vídeo: rolagem manual até o fim em toda resposta longa).
+  // host = onde a linha entra; scope = onde estão os headings visíveis.
+  function renderMiniIndex(host, scope) {
+    const hs = [...scope.querySelectorAll('h2, h3')];
+    if (hs.length < 3) return;
+    const bar = elx('div', 'nb-idx');
+    hs.forEach((h) => {
+      const t = (h.textContent || '').trim();
+      const b = elx('button', 'nb-idx-chip', t.length > 18 ? t.slice(0, 17).trimEnd() + '…' : t);
+      onTap(b, () => h.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      bar.appendChild(b);
+    });
+    const fim = elx('button', 'nb-idx-chip nb-idx-fim', '⤓ fim');
+    onTap(fim, () => { const last = scope.lastElementChild; if (last) last.scrollIntoView({ behavior: 'smooth', block: 'end' }); });
+    bar.appendChild(fim);
+    host.prepend(bar);
   }
 
   function paintClaude(card, msg, live) {
@@ -660,6 +694,7 @@
     if (!proc.length || !answer) {
       body.innerHTML = BISA.renderMarkdown(parts.filter(Boolean).join('\n\n')) || '<span class="biso-muted">…</span>';
       enhanceRespBody(body);
+      renderMiniIndex(body, body);
       renderTurnFiles(card, msg);
       return;
     }
@@ -685,6 +720,7 @@
     ans.innerHTML = BISA.renderMarkdown(answer);
     body.append(tg, bd, ans);
     enhanceRespBody(body);
+    renderMiniIndex(body, ans);   // headings do processo (colapsado) ficam de fora
     renderTurnFiles(card, msg);
   }
   // preenche o rodapé do card com chips de sugestão + ESCREVER + OUVIR (inline)
@@ -703,6 +739,16 @@
       // engolido em silêncio.
       sp.addEventListener('click', () => toggleSpeak(msg, sp));
       foot.appendChild(sp);
+    }
+    // chips de intenção aprendida: com foco num projeto, o pedido recorrente do
+    // usuário ("institucionalizar o fluxo") vira 1 toque em vez de ~12wpm de
+    // digitação (análise de vídeo 2026-07-19). Mesmo caminho dos outros chips.
+    if (chatFocus.current && chatFocus.current !== 'geral') {
+      const sk = elx('button', 'biso-nb-chip', '🧰 virar skill');
+      onTap(sk, () => commitText('Transforma esse fluxo/resposta numa skill reutilizável no padrão do projeto — SKILL.md + template + exemplo, e verifica a estrutura no final.'));
+      const rb = elx('button', 'biso-nb-chip', '📋 salvar runbook');
+      onTap(rb, () => commitText('Salva essa análise como runbook/nota permanente no projeto, no lugar certo, com nome descritivo.'));
+      foot.append(sk, rb);
     }
   }
 
@@ -1186,7 +1232,9 @@
   function commitText(text) {
     text = (text || '').trim(); if (!text) return;
     if (!hasRealText(text)) { BISA.toast('Nada para enviar — só pontuação.'); return; }
-    if (sessionState === 'running' || sessionState === 'starting') { BISA.toast('Aguarde o Claude terminar.'); return; }
+    // turno em andamento → não bloqueia mais: entra na fila de 1 slot (sai
+    // sozinha no fim do turno; ver flushQueuedTurn)
+    if (sessionState === 'running' || sessionState === 'starting') { queueTurn(text); return; }
     if (currentView !== 'caderno') switchView('caderno');
     lastUserText = text;
 
@@ -1209,6 +1257,43 @@
     armTurnWatchdog();
     // mostra a pergunta + começo da resposta UMA vez; não autoscrolla durante o stream
     ue.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  // ── fila de 1 turno ───────────────────────────────────────────────────
+  // Enviar durante um turno não perde mais a composição: a mensagem espera num
+  // slot único (a mais nova substitui) e é enviada sozinha no fim do turno.
+  // A pílula fica ao lado do status; tocar nela devolve o texto ao pad
+  // (vira rascunho → editar/cancelar por lá).
+  let queuedTurn = null;
+  function queueTurn(text) {
+    queuedTurn = text;
+    paintQueuePill();
+    BISA.toast('⏳ na fila — envio quando o Claude terminar.');
+  }
+  function paintQueuePill() {
+    if (!nbFoot) return;
+    let pill = nbFoot.querySelector('.biso-queue-pill');
+    if (!queuedTurn) { if (pill) pill.remove(); return; }
+    if (!pill) {
+      pill = elx('button', 'biso-queue-pill');
+      onTap(pill, () => {
+        const t = queuedTurn;
+        queuedTurn = null; paintQueuePill();
+        try { localStorage.setItem(DRAFT_KEY, t); } catch {}   // volta como rascunho
+        openWritePad();
+      });
+      if (nbStatus) nbStatus.after(pill); else nbFoot.appendChild(pill);
+    }
+    pill.textContent = '⏳ na fila — envio quando terminar';
+    pill.title = queuedTurn;
+  }
+  // chamada no fim de turno (done). Em erro a fila NÃO dispara — a pílula fica
+  // e o toque devolve o texto ao pad (mandar em cima de erro seria cego).
+  function flushQueuedTurn() {
+    if (!queuedTurn) return;
+    const t = queuedTurn;
+    queuedTurn = null; paintQueuePill();
+    commitText(t);   // sessão já idle → segue o caminho normal (watchdog incluso)
   }
 
   // ── watchdog de turno morto ───────────────────────────────────────────
@@ -1338,6 +1423,7 @@
         if (r.bottom > sr.bottom + 40) showRespPill(done.el);
       }
     }
+    flushQueuedTurn();   // havia mensagem esperando na fila? sai agora
   }
   function errorStream(message) {
     voiceReplyPending = false;   // erro não dispara leitura nem reabre o mic
@@ -1671,6 +1757,11 @@
     const box = pad.querySelector('.wp-box'), live = pad.querySelector('.wp-live');
     const dock = pad.querySelector('.wp-dock'), count = pad.querySelector('.wp-count');
     const openedAt = Date.now();
+    // pad vazio → 🎤 Ditar com visual primário e Enviar ghost; com texto,
+    // inverte de volta. A voz é o caminho rápido (vídeo: ~12wpm digitando).
+    const actionsEl = pad.querySelector('.wp-actions');
+    const paintPadEmpty = () => actionsEl.classList.toggle('pad-empty', !hasRealText(box.innerText));
+    paintPadEmpty();
     // 'input' (não keydown) — é o que o Scribble dispara; ver nota do console
     box.addEventListener('input', () => {
       const t = box.innerText;
@@ -1689,6 +1780,7 @@
       // "Enviar ↑" de baixo (vídeo 2026-07-15: botão cortado como "nviar ↑")
       const mini = pad.querySelector('.wp-send-mini');
       if (mini) mini.disabled = !hasRealText(t);
+      paintPadEmpty();   // Ditar/Enviar trocam de destaque conforme o pad enche
       dock.scrollTop = dock.scrollHeight;   // dock acompanha o fim do texto
       // rascunho persistente: o pad "some no re-render" (ver close abaixo) —
       // re-render/reload/troca de app não pode custar texto ditado
@@ -1719,7 +1811,9 @@
       predEl.appendChild(meter);
       logMetric('previsao', { confidence, n: (completions || []).length });
       (completions || []).forEach((c) => {
-        const b = elx('button', 'wp-pred-chip', '… ' + c);
+        // "+" no lugar de "…" — o toque JÁ anexa a continuação; o prefixo diz
+        // isso (análise de vídeo 2026-07-19: chips liam como palpite, não ação)
+        const b = elx('button', 'wp-pred-chip', '+ ' + c);
         onTap(b, () => {
           box.innerText = box.innerText.replace(/\s+$/, '') + ' ' + c;
           box.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1902,7 +1996,8 @@
       const t = box.innerText.trim();
       if (!t) { close(); return; }
       if (!hasRealText(t)) { BISA.toast('Nada para enviar — só pontuação.'); return; }     // não fecha — deixa completar
-      if (sessionState !== 'idle') { BISA.toast('Aguarde o Claude terminar.'); return; }   // não fecha — texto preservado
+      // turno rodando → fecha o pad e guarda na fila de 1 slot (envio no done)
+      if (sessionState !== 'idle') { logMetric('envio-fila', { texto: t.slice(0, 600) }); close(); queueTurn(t); return; }
       // conversa por voz: mensagem ditada + 🗣 ligado → a resposta será lida.
       // Destrava o <audio> AGORA (ainda dentro do gesto do toque no Enviar) —
       // sem isso o play() programático do finalizeStream é engolido pelo iOS.
