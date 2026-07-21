@@ -740,16 +740,6 @@
       sp.addEventListener('click', () => toggleSpeak(msg, sp));
       foot.appendChild(sp);
     }
-    // chips de intenção aprendida: com foco num projeto, o pedido recorrente do
-    // usuário ("institucionalizar o fluxo") vira 1 toque em vez de ~12wpm de
-    // digitação (análise de vídeo 2026-07-19). Mesmo caminho dos outros chips.
-    if (chatFocus.current && chatFocus.current !== 'geral') {
-      const sk = elx('button', 'biso-nb-chip', '🧰 virar skill');
-      onTap(sk, () => commitText('Transforma esse fluxo/resposta numa skill reutilizável no padrão do projeto — SKILL.md + template + exemplo, e verifica a estrutura no final.'));
-      const rb = elx('button', 'biso-nb-chip', '📋 salvar runbook');
-      onTap(rb, () => commitText('Salva essa análise como runbook/nota permanente no projeto, no lugar certo, com nome descritivo.'));
-      foot.append(sk, rb);
-    }
   }
 
   // ── TTS da resposta (speechSynthesis, fila por sentença) ─────────────────
