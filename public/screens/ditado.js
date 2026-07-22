@@ -83,6 +83,31 @@
     return out;
   }).join('\n');
 
+  // Dedup de borda entre segmentos consecutivos do Whisper (padrão meetily
+  // cleanup_overlap): quando um segmento termina com as mesmas palavras que
+  // abrem o seguinte (artefato de janela deslizante do streaming), remove a
+  // repetição do seguinte. Exige ≥2 palavras iguais — repetição legítima de
+  // UMA palavra ("muito muito bom") sobrevive. Compara sem caixa/pontuação.
+  const dedupBoundary = (prev, next) => {
+    const norm = (w) => w.toLowerCase().replace(/[.,!?…:;]+$/, '');
+    const a = prev.trim().split(/\s+/), b = next.trim().split(/\s+/);
+    for (let n = Math.min(8, a.length, b.length); n >= 2; n--) {
+      let match = true;
+      for (let i = 0; i < n; i++) {
+        if (norm(a[a.length - n + i]) !== norm(b[i])) { match = false; break; }
+      }
+      if (match) return b.slice(n).join(' ');
+    }
+    return next;
+  };
+  const joinLines = (lines) => lines.reduce((acc, l) => {
+    const t = ((l && l.text) || '').trim();
+    if (!t) return acc;
+    if (!acc) return t;
+    const rest = dedupBoundary(acc, t);
+    return rest ? acc + ' ' + rest : acc;
+  }, '');
+
   // Comandos de voz de apagar — sem tocar na tela, pt e en (o usuário alterna
   // os idiomas ao ditar; no vídeo de teste saiu "Erase it. Remove it."):
   //   "apaga tudo" · "erase/delete everything|all"      → zera o ditado da sessão
@@ -184,7 +209,7 @@
           let d; try { d = JSON.parse(ev.data); } catch { return; }
           if (d.type === 'ready_to_stop') { clearTimeout(kill); try { ws.close(); } catch {} notify(); return; }
           if (!d.lines || !box) return;
-          const txt = d.lines.map((l) => l.text).join(' ') + ' ' + (d.buffer_transcription || '');
+          const txt = joinLines(d.lines) + ' ' + (d.buffer_transcription || '');
           const t = transform(txt);
           box.innerText = base + (base && t ? ' ' : '') + t;
           box.dispatchEvent(new Event('input', { bubbles: true }));
@@ -225,7 +250,7 @@
       if (ses !== s) return;
       let d; try { d = JSON.parse(ev.data); } catch { return; }
       if (!d.lines) return;
-      const lines = d.lines.map((l) => l.text).join(' ');
+      const lines = joinLines(d.lines);
       // transcript mudou = tem voz chegando (segundo sinal além do RMS)
       const key = lines + '|' + (d.buffer_transcription || '');
       if (key !== s.lastText) { s.lastText = key; s.lastVoice = performance.now(); s.paused = false; }

@@ -1,0 +1,354 @@
+{
+ "updated": "2026-07-22",
+ "note": "Changelog amigável do bisa — curado pelo Claude p/ o Diego entender a evolução do sistema. O CHANGELOG.md técnico segue em docs/. Ao adicionar features novas, espelhe aqui em linguagem simples.",
+ "areas": {
+  "Finanças": {
+   "emoji": "💰",
+   "color": "#5b8a72"
+  },
+  "Caderno": {
+   "emoji": "📓",
+   "color": "#205ea6"
+  },
+  "Aparência": {
+   "emoji": "🎨",
+   "color": "#8a5cf6"
+  },
+  "Câmeras": {
+   "emoji": "📹",
+   "color": "#b0584f"
+  },
+  "Novela": {
+   "emoji": "🎬",
+   "color": "#c2820a"
+  },
+  "Sistema": {
+   "emoji": "⚙️",
+   "color": "#6e7468"
+  },
+  "Ziggy": {
+   "emoji": "⚡",
+   "color": "#b3762e"
+  }
+ },
+ "entries": [
+  {
+   "date": "2026-07-22",
+   "area": "Ziggy",
+   "emoji": "📅",
+   "tag": "feature",
+   "title": "Aba 📅 Agenda no Biso: controle de agenda + histórico de reuniões gravadas",
+   "summary": "Nova sub-aba entre Ziggy e Notas: a agenda do dia (a mesma do biso no browser) navegável por dia, com lembretes por toque, as reuniões fixas semanais marcadas com ↻ e as tags como chips. A parte nova: cada dia mostra as reuniões que o Ziggy gravou — horário, resumo, contagem de ações — com botões para abrir a ata e as ações na hora, e o item da agenda que foi gravado ganha o selo 🎧. Conforme as próximas gravações acontecerem já vinculadas à agenda, o histórico vira um índice navegável: da reunião agendada ao documento gerado."
+  },
+  {
+   "date": "2026-07-22",
+   "area": "Ziggy",
+   "emoji": "📅",
+   "tag": "melhoria",
+   "title": "Meeting vinculado à agenda: título, tags e insights do assunto certo",
+   "summary": "Se a reunião estiver agendada na agenda do dia do biso (ex.: \"14:00 Sprint planning #sar\"), a gravação que começar perto desse horário herda o título e as #tags automaticamente. Com isso o tradutor acerta mais nomes e siglas (sabe a pauta), o painel de contexto busca materiais do assunto certo, o resumo final abre dizendo se a pauta foi coberta, e a ata, as ações e o arquivo do dia ficam pesquisáveis por tag (todas as reuniões de #sar num grep). Sem agendamento, tudo funciona como antes — agendar antes é o que liga as pontas."
+  },
+  {
+   "date": "2026-07-22",
+   "area": "Ziggy",
+   "emoji": "🏁",
+   "tag": "melhoria",
+   "title": "Meeting: fechamento digno — resumo final fica na tela ao parar",
+   "summary": "Parar a tradução não descarta mais nada: o painel direito agora vira o fechamento da reunião — resumo final, tópicos importantes, ações necessárias (as mesmas que viram checkboxes nos followups do trabalho) e os arquivos nossos relacionados ao assunto — com confirmação do que foi salvo onde (ata + follow-ups) e botão de copiar. Enquanto o resumo é gerado aparece \"encerrando…\", e durante a reunião o painel vazio explica que está coletando contexto. O fechamento fica visível até a próxima sessão começar."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Sistema",
+   "emoji": "✎",
+   "tag": "melhoria",
+   "title": "Trackpad v2: modo Pencil absoluto (estilo Wacom) + aceleração e inércia",
+   "summary": "A Pencil agora comanda o cursor do Mac como numa mesa digitalizadora: pairar sobre o iPad move o ponteiro sem tocar (hover), tocar clica, tocar e arrastar arrasta, segurar parada vira botão direito — dentro de uma área de mapeamento com o formato exato da tela do Mac. O dedo continua como trackpad clássico, agora com curva de aceleração (devagar = precisão, rápido = atravessa a tela) e rolagem com inércia. Nova faixa lateral ⇅ de rolagem para usar com a Pencil.",
+   "detail": "Modos automáticos por pointerType (pen=absoluto, touch=relativo; toggle no topo). Protocolo ganhou t:'a' (x,y normalizados) + GET /pointer/info (helper grava w×h da tela em /tmp/bisa-pointer.info). Helper: clickState em pares down/up (double-click real no modo Pencil), flag absolute inibe re-sync. Estado da Pencil: pending→drag/click/rclick com hold 520ms. Atenção: rebuild do helper invalida o TCC — religar em Acessibilidade."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Sistema",
+   "emoji": "🖱",
+   "tag": "novo",
+   "title": "iPad vira trackpad do Mac (protótipo)",
+   "summary": "Nova página /trackpad.html: a tela do iPad controla o ponteiro do Mac — 1 dedo move, toque clica (duplo toque = duplo clique), 2 dedos rolam, toque de 2 dedos é botão direito, segurar e mover arrasta. Com medidor de latência ao vivo no topo e ajuste de velocidade. Requer conceder Acessibilidade ao BisaPointer no Mac (1ª vez).",
+   "detail": "Frontend manda lotes de eventos por frame pelo WS autenticado (pointer.ev) → bisa escreve num FIFO → BisaPointer.app (Swift, CGEvent) injeta mover/clique/scroll/drag. Helper via open -na (padrão BisaEar p/ TCC); instância única via flock; re-sync com mouse físico quando ocioso. Só na tailnet."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Finanças",
+   "emoji": "📋",
+   "tag": "melhoria",
+   "title": "Leitura do mês agora só aparece quando você pede",
+   "summary": "O card 'Leitura do mês' não abre mais sozinho toda vez que a página carrega — ele fica recolhido num cabeçalho discreto e só busca a análise no primeiro toque. De quebra, a página ficou mais rápida (uma chamada a menos a cada visita).",
+   "detail": "Card fechado por padrão em _anAnalystCard (finance.js), fetch lazy no primeiro expand, ↻ visível só aberto; erro mostra mensagem em vez de sumir com o card."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Finanças",
+   "emoji": "📗",
+   "tag": "novo",
+   "title": "Tema Planilha nas finanças — do jeito que a Gabriela pediu",
+   "summary": "Novo tema 'Planilha (claro)' no ciclo ◐ das finanças: folha branca com gridlines, letra do sistema (a mesma do Numbers/Sheets — zero serifa, em todas as visões), números alinhados de tabela, verde Office e vermelho contábil. No aparelho que já usa a aparência Planilha do app, as finanças abrem nesse tema sozinhas.",
+   "detail": "Tema fin-planilha em finance.js: tokens Excel (mesma paleta da aparência excel do app), --disp vira var(--font) no almanaque e na Análise (mata a Fraunces), tabular-nums na tela toda, gridlines no body. Default automático quando data-appearance=excel e sem escolha salva. Frontend-only (reload, sem restart)."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Ziggy",
+   "emoji": "📆",
+   "tag": "novo",
+   "title": "Um arquivo por dia: o diário canônico de trabalho (days/)",
+   "summary": "Agora existe UM arquivo por dia de trabalho (days/AAAA-MM-DD.md no mcgraw) com três seções: Abertura (briefing da manhã), Durante o dia (reuniões, decisões, com hora) e Fechamento (que vira o handoff da manhã seguinte). Qualquer ponto de entrada — Ziggy no iPad, Alexa, Caderno, Biso do corp — usa o mesmo arquivo: o primeiro do dia cria, os demais atualizam. As reuniões do Ziggy já se registram sozinhas nele.",
+   "detail": "Bridge: ensureDayFile/dayFileSet/dayFileAppend (deterministico — LLM só gera conteúdo); morning preenche Abertura, wrapup preenche Fechamento (substitui o handoff avulso de followups/), digest e gravador apendam no Durante o dia. Contrato p/ sessões interativas em days/README.md + seção DAILY FLOW no CLAUDE.md do mcgraw. Prompts morning/wrapup leem days/ primeiro; days/ no escopo e no mapa de frescor."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Caderno",
+   "emoji": "📅",
+   "tag": "melhoria",
+   "title": "O caderno agora sabe que amanheceu",
+   "summary": "Dizer 'Olá' de manhã numa conversa retomada da véspera fazia o Claude repetir o plano de ontem como se fosse atual ('a janela do EKS hoje 22h' — era o hoje de ontem). Agora cada turno chega com a data/hora atual e, quando é um novo dia, o Claude é instruído a recalcular referências de tempo, verificar o que mudou (git, arquivos) e abrir dizendo o que aconteceu desde a última conversa — perguntando o que não conseguir confirmar.",
+   "detail": "dayAnchorPrompt() no getExtraSystemPrompt da sessão do caderno: âncora temporal em todo turno + protocolo NOVO DIA quando lastTurnAt (persistido em .meta/biso-chat.json) é de outro dia."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Ziggy",
+   "emoji": "🌅",
+   "tag": "melhoria",
+   "title": "Começar o dia com status honesto (e reuniões transcritas com modelo grande)",
+   "summary": "O 'Start my day' agora abre dizendo a idade real dos dados ('jira/tasks parado há 8 dias') e separa o que é fato de hoje do que é nota velha — pendência antiga vira pergunta na seção 'Verificar agora', nunca afirmação. E a causa dos tópicos sem sentido nas reuniões foi encontrada: o transcritor rodava no menor modelo Whisper que existe; agora usa o large-v3-turbo com glossário dos seus termos (Zscaler, Okta, Datadog…).",
+   "detail": "Bridge: mcgrawFreshness() injeta data/hora + idade dos arquivos-fonte no prompt do morning; regras de honestidade (fonte+data em fato de 2+ dias, VERIFICAR AGORA como perguntas, 'sem evidência nos arquivos'); meetings/ entrou no escopo de leitura. STT: --model large-v3-turbo + --initial-prompt com STT_VOCAB em transcribeWav e no gravador."
+  },
+  {
+   "date": "2026-07-21",
+   "area": "Ziggy",
+   "emoji": "🎧",
+   "tag": "melhoria",
+   "title": "Meeting mais confiável: nada de fala perdida, avisos honestos e alerta quando falam de você",
+   "summary": "A tela Meeting agora avisa quando o resumidor está falhando (antes ficava congelada igual silêncio), mostra quando não chega digest novo há minutos, e destaca com 📣 o bloco em que citaram seu nome. Se o resumo de um trecho falhar, a transcrição crua é salva mesmo assim — nada da reunião se perde. Sessões agora vão até 2h e, ao atingir o teto, fecham sozinhas com resumo final e aviso no Echo/Telegram. As ações citadas na call viram checklist em followups/ do mcgraw, e todo o arquivo de reunião ganha um espelho dentro do projeto de trabalho.",
+   "detail": "Origem: análise do vídeo da reunião de 21/07 — o /agent/ask do biso devolveu 500 por ~16 min e 16 blocos foram perdidos sem aviso; a sessão também bateu o antigo teto de 60 blocos (~32 min) e ficou zumbi na UI. Bridge: retry 3× com backoff no digest, transcript arquivado em falha, teto 240 blocos com auto-finish + notify, campos errorStreak/lastDigestTs/mention no /digests, resumo final com seção Ações → followups/meetings-<data>.md, espelho meetings/ no MCGRAW_CWD. Frontend: aviso com prioridade erro > silêncio > sem-digest, destaque de menção via MENTION_WORDS."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Finanças",
+   "emoji": "📋",
+   "tag": "novo",
+   "title": "Leitura do mês + estabelecimentos com memória",
+   "summary": "A visão Análise ganhou o card 'Leitura do mês': um analista (IA barata sobre números já calculados) escreve 4-6 bullets citando nomes e valores reais — quem causou o estouro do envelope, ticket médio no Komprão, dias de pico, aporte vs piso. E o sistema agora aprende estabelecimentos: lançamentos genéricos de mercado viram 'Komprão Koch (presumido)' automaticamente, no passado e nos próximos.",
+   "detail": "Regras persistentes em merchant-rules.json (ex.: mercado genérico → Komprão) aplicadas ao criar qualquer lançamento (voz, manual ou importação); os 7 'Mercado' de julho foram corrigidos in-place. A leitura fica em cache e só regenera quando os dados mudam (ou no botão ↻). O agrupamento por estabelecimento do drill-down usa o campo novo primeiro."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Finanças",
+   "emoji": "🔬",
+   "tag": "experimento",
+   "title": "Visão Análise: a parte operacional virou dashboard",
+   "summary": "A tela agora abre na visão Análise: o almanaque ganhou três números grandes (Sobra livre, Entrou, Saiu com a variação vs mês anterior) logo após o herói, os envelopes mostram 'resta R$ X' e tocar num envelope ou numa linha do 'Pra onde foi' abre a lista de lançamentos filtrada. Embaixo, só o essencial: Renda em 1 linha e os 5 recentes.",
+   "detail": "É um experimento: o seletor Análise | Clássica fica logo abaixo do navegador de mês e a escolha é lembrada por aparelho. A Clássica continua exatamente como era (renda, envelopes, lançamentos, contas, objetivos) — e o toque-para-ver-lançamentos do almanaque funciona nela também. Lançar por voz, importar extrato e o + Avulso continuam na nova visão; liberdade acima da meta segue aparecendo como vitória em verde."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Finanças",
+   "emoji": "📜",
+   "tag": "novo",
+   "title": "Novo visual das finanças: estilo almanaque",
+   "summary": "A tela de finanças ganhou um design totalmente novo: um número grande respondendo \"quanto sobra pra viver?\", envelopes como barras (adeus anéis) com o traço da meta, uma faixa de patrimônio em destaque e o ranking de pra onde o dinheiro foi.",
+   "detail": "Feito com você escolhendo a direção num protótipo antes de ir pro app. Tipografia editorial, funciona no tema escuro, e o investimento acima do piso aparece como vitória (verde), não como estouro. É a primeira parte do finance v2 — as ações (lançar, contas, objetivos) seguem logo abaixo."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Finanças",
+   "emoji": "📥",
+   "tag": "novo",
+   "title": "Importar extrato do banco (fim da digitação)",
+   "summary": "Agora dá pra subir o extrato do banco (OFX ou CSV) e o sistema concilia sozinho: mostra o que já foi lançado, o que falta e o que deve ignorar.",
+   "detail": "Ele casa os gastos por valor e data, detecta compras divididas em dois lançamentos, ignora automaticamente pix entre o casal e fatura de cartão, e sugere a categoria dos que faltam — você confirma num toque. É o trabalho manual da conciliação virando upload."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Caderno",
+   "emoji": "🎬",
+   "tag": "novo",
+   "title": "Rodada guiada pelo seu vídeo: 5 melhorias de fluxo no Caderno",
+   "summary": "Analisei seu screen recording de 11 min e apliquei: (1) chips de completar frase agora se mostram acionáveis com + e o 🎤 Ditar fica em destaque quando o pad está vazio; (2) dá para Enviar mesmo com o Claude trabalhando: a mensagem entra numa fila (pílula ⏳) e sai sozinha quando ele termina, e turnos com mais de 45s mandam push '✅ resposta pronta' pro iPad; (3) respostas longas ganham mini-índice de seções no topo + chip '⤓ fim' para pular ao veredito, e o Claude foi instruído a começar análises longas com um TL;DR de 2-3 linhas; (4) o leitor de arquivo ganhou o botão 📤 corp — qualquer artefato criado vai direto pro clipboard do Mac corp."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Aparência",
+   "emoji": "🎨",
+   "tag": "novo",
+   "title": "Temas Claude e Claude · noite no Biso",
+   "summary": "O visual do cockpit Ziggy virou tema oficial do Biso: no seletor 🎨 agora existem \"Claude\" (papel ivory, título em serifa, abas em fonte de código, linha terracotta viva sob o cabeçalho) e \"Claude · noite\" (papel carvão quente com a mesma terracotta). A sub-aba Ziggy passou a obedecer ao tema escolhido no Biso — tema escuro deixa tudo escuro, claro deixa tudo claro, sem mistura.",
+   "detail": "A folha de escrita do Caderno também ganhou o par: no botão ◐ do rodapé agora existem \"Tinta · Claude\" e \"Tinta · Claude noite\" — papel ivory (ou carvão), a tinta do Claude em terracotta, a sua voz em verde-oliva, e a prosa na mesma serifa (Iowan) do cockpit. Escolhendo tema 🎨 Claude + Tinta Claude, o Biso inteiro — abas, cockpit e folha — fala um só idioma visual."
+  },
+  {
+   "date": "2026-07-20",
+   "area": "Ziggy",
+   "emoji": "🎧",
+   "tag": "novo",
+   "title": "Tela Ziggy virou cockpit de trabalho — reunião no centro",
+   "summary": "A tela foi redesenhada: a reunião agora é o herói no topo, com a tradução ao vivo de um lado e um painel novo do outro — resumo da reunião que se atualiza sozinho, documentos NOSSOS do McGraw sobre o assunto em pauta e falas em inglês prontas, fundamentadas no que temos. Tem modo tela cheia (⛶) para usar durante a meeting, aviso quando só chega silêncio, e ao parar a tradução um resumo final é gravado em meetings/. O 'como falo em inglês' agora é por voz: toque 🎤, fale em português, e receba a frase pronta com ▶ para ouvir a pronúncia.",
+   "detail": "O que saiu da tela foi realocado: Nikin Match e Hábitos foram para a Fit, o agente de finanças virou o botão 🤖 na tela de Finanças, a saúde do ecossistema foi para Ajustes, e o card de memória/journal saiu (o Caderno é o fluxo principal). Também ficaram as travas: gravação e tradução não rodam mais ao mesmo tempo (compartilham o ouvido), e ligar a tradução duas vezes (voz + iPad) não cria mais loops duplicados. Na rodada 2 do mesmo dia, a tela ganhou o visual Claude (papel ivory, títulos em serifa, terracotta, falas da Echo em fonte de código) com tema noite, e o inglês virou o idioma principal — o português fica no botão PT do topo. Na rodada 3, o Ziggy saiu do menu de baixo e virou sub-aba dentro do Biso, ao lado do Caderno — o fluxo de trabalho inteiro (caderno + cockpit) agora mora numa aba só. A área de colar texto também melhorou: cresce com o conteúdo, mostra o tamanho e tem botão ✕ para limpar."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Finanças",
+   "emoji": "📊",
+   "tag": "novo",
+   "title": "Dashboards interativos de finanças",
+   "summary": "Botão 📊 na tela de finanças abre um board novo no estilo Claude (papel ivory, números em serifa, terracotta): saldo/entrou/saiu com comparação ao mês anterior, fluxo de caixa dos últimos meses (toque num mês para focar tudo nele), envelopes AUVP com alvo — e liberdade acima da meta agora aparece em verde como vitória —, rosca de categorias e tendências. Tocar em qualquer envelope ou categoria abre os lançamentos. Funciona nos temas claro e noite."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Caderno",
+   "emoji": "🎓",
+   "tag": "novo",
+   "title": "Caderno afinado pelos vídeos de uso: estudo, trecho e resposta ao vivo",
+   "summary": "Analisei seus 2 vídeos de hoje frame a frame e apliquei 5 melhorias: o texto agora aparece palavra por palavra (sem os 30s de tela parada), turno que não responde em 12s vira botão de reenviar, o trecho selecionado ganhou um porta-trecho que não se perde mais (com '▶ puxar o fio' que envia direto), nasceu o Modo Estudo 📚 (o Claude mantém a nota-guia sozinho, sem pedir permissão, e a nota fica fixada no topo), e as sugestões de escrita agora seguem o tema da conversa em vez de alucinar programação."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Ziggy",
+   "emoji": "🔒",
+   "tag": "novo",
+   "title": "Agente de finanças numa jaula de verdade",
+   "summary": "O agente que mexe nas suas finanças agora roda dentro de um sandbox do próprio sistema operacional: ele só consegue escrever na pasta do finance, não consegue ler senhas ou chaves, e só fala com a Anthropic.",
+   "detail": "É a tecnologia de sandbox da própria Anthropic (Seatbelt do macOS). Mesmo que alguém tentasse enganar o modelo, o sistema operacional bloqueia. Todos os robôs do Claude também ganharam um teto de passos — nenhum roda solto."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Ziggy",
+   "emoji": "🏢",
+   "tag": "novo",
+   "title": "Seu dia de trabalho em botões",
+   "summary": "A aba ⚡ Ziggy ganhou o card \"McGraw — meu dia\": um toque e o Claude lê seus projetos do trabalho e responde — começar o dia, preparar a Daily, próximo passo, fechar o dia, rascunho de Slack e mais.",
+   "detail": "As respostas podem ser copiadas, salvas no caderno ou enviadas direto pro clipboard do Mac do trabalho (é só Cmd+V lá). Tudo também funciona por voz na Alexa — a fala exata aparece escrita dentro de cada botão."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Ziggy",
+   "emoji": "🌅",
+   "tag": "novo",
+   "title": "Briefing do trabalho se faz sozinho",
+   "summary": "De segunda a sexta às 8h45 o sistema monta o resumo do dia de trabalho sozinho: o que espera resposta de colega, o que é pra hoje. A nota aparece no caderno e a Alexa acende o anel amarelo avisando.",
+   "detail": "À noite, o botão \"Fechar o dia\" grava o fechamento — e o briefing da manhã seguinte começa lendo exatamente ele. O dia termina e começa conectado."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Ziggy",
+   "emoji": "🗣️",
+   "tag": "novo",
+   "title": "Página em inglês pra treinar",
+   "summary": "A aba Ziggy agora tem versão em inglês (botão \"EN — train me\"): os nomes dos botões viram o inglês natural que um americano falaria, e cada ação mostra como pedir aquilo pra Alexa em voz alta.",
+   "detail": "Ler a frase todo dia ao tocar no botão é treino passivo — quando quiser, é só falar com a Echo em vez de tocar."
+  },
+  {
+   "date": "2026-07-19",
+   "area": "Ziggy",
+   "emoji": "📻",
+   "tag": "novo",
+   "title": "Tradução de reunião no iPad",
+   "summary": "Durante reuniões em inglês, o ticker da aba Ziggy mostra resuminhos em português a cada ~30s, com sugestões de fala prontas. Agora com botão pra ligar e desligar sem falar com a Alexa.",
+   "detail": "Tem também o \"como falo em inglês?\": digita em português e recebe a frase pronta pra dizer na reunião."
+  },
+  {
+   "date": "2026-07-16",
+   "area": "Finanças",
+   "emoji": "🪙",
+   "tag": "ajuste",
+   "title": "Visual melhor pras categorias sem meta",
+   "summary": "Categorias sem valor previsto (Diversos, Roupinhas) agora mostram o quanto você gastou num disquinho de moeda, em vez de um anel vazio.",
+   "detail": "O valor vira o destaque (ex.: \"R$ 65\"), na cor do envelope, sem parecer erro nem porcentagem."
+  },
+  {
+   "date": "2026-07-16",
+   "area": "Caderno",
+   "emoji": "✨",
+   "tag": "novo",
+   "title": "Aba Evolução (esta tela)",
+   "summary": "Um changelog vivo e interativo do próprio sistema, pra você acompanhar como o bisa cresce ao longo do tempo.",
+   "detail": "Linha do tempo cronológica, filtro por área e um botão que pede ao Claude pra te contar a evolução em forma de história."
+  },
+  {
+   "date": "2026-07-16",
+   "area": "Finanças",
+   "emoji": "🫙",
+   "tag": "correção",
+   "title": "Categoria sem meta não é mais \"estouro\"",
+   "summary": "Gastos numa categoria sem valor previsto (tipo \"Diversos\") apareciam como erro vermelho. Agora mostram um estado neutro \"livre\".",
+   "detail": "O anel fica com um traço \"–\" em vez de 100% vermelho, e ao expandir os lançamentos aparece um atalho \"＋ definir meta\" caso você queira dar um teto. O controle real continua sendo o do envelope."
+  },
+  {
+   "date": "2026-07-16",
+   "area": "Finanças",
+   "emoji": "💵",
+   "tag": "novo",
+   "title": "Lançar em dólar e mandar pro investimento",
+   "summary": "No \"+ Avulso\" agora tem um campo US$ que converte pra real na hora, e um toggle \"🪙 Vai para investimento\" que cria a receita e o aporte num toque só.",
+   "detail": "Some a necessidade de digitar categorias técnicas: o app aplica a regra por baixo dos panos e credita o objetivo (ex.: Reserva de emergência) já convertido pra dólar."
+  },
+  {
+   "date": "2026-07-15",
+   "area": "Novela",
+   "emoji": "🎬",
+   "tag": "novo",
+   "title": "Aba Novela sempre no ar",
+   "summary": "O sistema de vídeos (novela-shorts) agora sobe sozinho e reinicia após reboot — a aba 🎬 Novela não mostra mais \"indisponível\".",
+   "detail": "Virou um serviço permanente do Mac (LaunchAgent com.bisa.novela), igual ao servidor principal e ao ditado."
+  },
+  {
+   "date": "2026-07-14",
+   "area": "Caderno",
+   "emoji": "👆",
+   "tag": "novo",
+   "title": "Tabelas e gráficos interativos",
+   "summary": "Tabelas nas respostas ganham barras coloridas automáticas; e você pode tocar num cabeçalho pra ordenar ou num gráfico pra ampliar em tela cheia.",
+   "detail": "Coroa a série de melhorias de visualização: números viram barras proporcionais, o maior valor fica em destaque, e negativos/positivos ganham cor."
+  },
+  {
+   "date": "2026-07-14",
+   "area": "Caderno",
+   "emoji": "📊",
+   "tag": "novo",
+   "title": "Claude desenha gráficos de verdade",
+   "summary": "Quando os dados pedem, o Claude agora responde com gráficos nativos (barras, linha, rosca, indicadores) em vez de só texto.",
+   "detail": "Os gráficos seguem o tema do caderno (papel, escuro, planilha, neon) e nunca inventam números — só aparecem quando os dados são reais."
+  },
+  {
+   "date": "2026-07-14",
+   "area": "Caderno",
+   "emoji": "🩹",
+   "tag": "correção",
+   "title": "Fim do texto riscado à toa",
+   "summary": "Respostas com \"~230 °C\" ou \"~15 min\" apareciam com o texto riscado por engano. Corrigido.",
+   "detail": "O til (~), que o Claude usa pra dizer \"aproximadamente\", não é mais confundido com o traço de riscar."
+  },
+  {
+   "date": "2026-07-10",
+   "area": "Caderno",
+   "emoji": "👾",
+   "tag": "novo",
+   "title": "Personagem retrô enquanto o Claude pensa",
+   "summary": "A pílula de \"pensando\" ganhou um bichinho 8-bit (invasor, fantasma, slime ou mago) com frases de fliperama que mudam sozinhas.",
+   "detail": "As frases se adaptam ao que o Claude está fazendo (buscar na web, rodar comando…), aceleram quando demora, e tocar no personagem soma pontos num placar secreto."
+  },
+  {
+   "date": "2026-07-10",
+   "area": "Aparência",
+   "emoji": "🧮",
+   "tag": "novo",
+   "title": "Tema Planilha (estilo Excel)",
+   "summary": "Um tema novo em Ajustes → Aparência: fundo branco de verdade, verde do Excel e cara de planilha.",
+   "detail": "Feito a pedido da Gabriela, que achava o tema claro pouco branco. Convive com os outros temas; a escolha é por aparelho."
+  },
+  {
+   "date": "2026-07-10",
+   "area": "Finanças",
+   "emoji": "💚",
+   "tag": "ajuste",
+   "title": "Saldo do mês em verde vivo",
+   "summary": "O saldo positivo do primeiro card das Finanças ficou num verde mais vibrante e fácil de bater o olho.",
+   "detail": "Só o saldo do topo mudou; o resto do app mantém o verde sálvia original."
+  }
+ ]
+}

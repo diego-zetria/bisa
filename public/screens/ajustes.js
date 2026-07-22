@@ -228,12 +228,42 @@
     }
   }
 
+  // --- Ecossistema Ziggy 🩺: saúde das peças que rodam atrás do bridge
+  // (:7788) + custos do claude headless, via /ziggy/ecosystem. Separado do
+  // card "Saúde & custos" acima (esse é local, este vem do bridge — 502 se
+  // ele estiver fora). Atualiza a cada 60s enquanto a tela está montada.
+  let ecoTimer = null;
+
+  function renderEcoCard(container) {
+    const title = '<div class="section-title">Ecossistema Ziggy 🩺</div>';
+    container.innerHTML = `${title}<div class="gs-card"><div class="muted gs-sub">Carregando…</div></div>`;
+    const tick = async () => {
+      try {
+        const d = await G.api('/ziggy/ecosystem');
+        const rows = [{ name: 'bridge (:7788)', ok: true, detail: '' }, ...(d.components || [])].map((c) =>
+          `<div class="gs-row" style="margin-top:6px"><span class="gs-sub">${c.ok ? '🟢' : '🔴'} ${c.name}</span><span class="muted gs-sub">${c.detail || ''}</span></div>`).join('');
+        const costs = d.costs
+          ? `<div class="muted gs-sub" style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--line);${d.costs.today > d.costs.budgetDaily ? 'color:#c0392b;' : ''}">💸 claude headless — hoje ${d.costs.today.toFixed(2)} · 7 dias ${d.costs.week.toFixed(2)} · mês ${d.costs.month.toFixed(2)} (orçamento diário ${d.costs.budgetDaily})</div>`
+          : '';
+        container.innerHTML = `${title}<div class="gs-card">${rows}${costs}</div>`;
+      } catch (e) {
+        container.innerHTML = `${title}<div class="gs-card"><div class="muted gs-sub">🔴 bridge fora do ar: ${e.message}</div></div>`;
+      }
+    };
+    tick();
+    ecoTimer = setInterval(tick, 60000);
+  }
+
   function mount(pad) {
     injectStyle();
     const healthRoot = document.createElement('div');
     healthRoot.className = 'gate-settings';
     pad.appendChild(healthRoot);
     renderHealthCard(healthRoot);
+    const ecoRoot = document.createElement('div');
+    ecoRoot.className = 'gate-settings';
+    pad.appendChild(ecoRoot);
+    renderEcoCard(ecoRoot);
     const pushRoot = document.createElement('div');
     pushRoot.className = 'gate-settings';
     pad.appendChild(pushRoot);
@@ -245,5 +275,7 @@
     render(root);
   }
 
-  window.BISA.screens['ajustes'] = { mount, unmount() {} };
+  window.BISA.screens['ajustes'] = { mount, unmount() {
+    if (ecoTimer) { clearInterval(ecoTimer); ecoTimer = null; }
+  } };
 })();

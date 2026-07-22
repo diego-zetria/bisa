@@ -694,6 +694,28 @@
     cfgBtn.addEventListener('click', () => BISA.go('ajustes'));
     right.appendChild(cfgBtn);
 
+    /* Botão Diagnóstico (I6): empacota logs/estado e avisa o Diego */
+    const sosBtn = el('button', 'btn ghost block');
+    sosBtn.style.cssText = 'margin-top:8px;font-size:.95rem;min-height:48px;';
+    sosBtn.textContent = '🛟 Algo está estranho';
+    sosBtn.addEventListener('click', async () => {
+      if (sosBtn.disabled) return;
+      sosBtn.disabled = true;
+      sosBtn.textContent = '🛟 Preparando…';
+      try {
+        const r = await BISA.api('/diagnostico', { method: 'POST', json: {} });
+        BISA.toast(r.avisado
+          ? 'Prontinho — o Diego já foi avisado 💌'
+          : 'Anotei tudo aqui — o Diego vai ver assim que possível 💌', 4200);
+      } catch {
+        BISA.toast('Não consegui agora — tenta de novo daqui a pouco 🙏', 4200);
+      } finally {
+        sosBtn.disabled = false;
+        sosBtn.textContent = '🛟 Algo está estranho';
+      }
+    });
+    right.appendChild(sosBtn);
+
     grid.append(left, right);
 
     /* ─── Refresh function ─── */

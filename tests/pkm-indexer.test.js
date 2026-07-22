@@ -400,6 +400,46 @@ test('search: finds journal entry by body text', () => {
   assert.equal(result.journal[0].date, '2026-06-01');
 });
 
+test('search: multi-word query matches non-adjacent words (all-words tier)', () => {
+  const tmp = makeTmpDir();
+  const { pkm, codex } = setupDataDir(tmp);
+  fs.writeFileSync(path.join(codex, 'journal.md'), '');
+
+  fs.writeFileSync(path.join(pkm, 'People', 'ana-souza.md'),
+    '---\nname: Ana Souza\ntags: []\n---\nO aniversário dela é em março.');
+
+  const idx = makeIndexer({ CWD: tmp, broadcast: null });
+  idx.reindex();
+
+  const result = idx.search('ana aniversario');
+  assert.ok(result.entities.length > 0, 'non-adjacent words should match via all-words tier');
+  assert.equal(result.entities[0].slug, 'ana-souza');
+  assert.equal(result.entities[0].score, 40);
+});
+
+test('search: ranking — exact name beats prefix beats body substring', () => {
+  const tmp = makeTmpDir();
+  const { pkm, codex } = setupDataDir(tmp);
+  fs.writeFileSync(path.join(codex, 'journal.md'), '');
+
+  fs.writeFileSync(path.join(pkm, 'People', 'ana.md'),
+    '---\nname: Ana\ntags: []\n---\nNota.');
+  fs.writeFileSync(path.join(pkm, 'People', 'ana-souza.md'),
+    '---\nname: Ana Souza\ntags: []\n---\nNota.');
+  fs.writeFileSync(path.join(pkm, 'Projects', 'reforma.md'),
+    '---\nname: Reforma\ntags: []\n---\nA Ana ajudou aqui.');
+
+  const idx = makeIndexer({ CWD: tmp, broadcast: null });
+  idx.reindex();
+
+  const result = idx.search('ana');
+  const bySlug = Object.fromEntries(result.entities.map((e) => [e.slug, e.score]));
+  assert.equal(bySlug['ana'], 100);
+  assert.equal(bySlug['ana-souza'], 80);
+  assert.equal(bySlug['reforma'], 60);
+  assert.equal(result.entities[0].slug, 'ana');
+});
+
 test('search: empty query returns empty results', () => {
   const tmp = makeTmpDir();
   setupDataDir(tmp);

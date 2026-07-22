@@ -89,16 +89,22 @@
       });
       html = div.innerHTML;
     }
-    return html;
+    return enhanceZiggyFences(html);
   }
 
   // ---- WS (eventos fs/pkm/llm/notify) ----
   const wsSubs = new Set();
   function onWs(fn) { wsSubs.add(fn); return () => wsSubs.delete(fn); }
-  let ws, wsTimer;
+  let ws, wsTimer, wsEverOpen = false;
   function connectWs() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    ws.onopen = () => {
+      // reconexão (não a 1ª conexão) → avisa as telas: um turno em andamento
+      // pode ter morrido junto com o servidor (detector de turno órfão do caderno)
+      if (wsEverOpen) for (const fn of wsSubs) { try { fn({ type: 'ws.reconnected' }); } catch {} }
+      wsEverOpen = true;
+    };
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       // recarga remota (Modo Anotar: dev aplicou uma mudança → a usuária vê na hora)
@@ -140,11 +146,75 @@
     if (a) { e.preventDefault(); openEntity(a.dataset.slug); }
   });
 
+  // ---- fence executável ```ziggy (padrão SilverBullet, pesquisa 2026-07):
+  // bloco numa nota do caderno vira botão que dispara um fluxo do Ziggy com o
+  // texto do bloco. 1ª linha opcional "flow: journal|finagent|slack|interpret|status".
+  function enhanceZiggyFences(html) {
+    if (!html.includes('language-ziggy')) return html;
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('pre > code.language-ziggy').forEach((code) => {
+      const raw = code.textContent.trim();
+      const m = raw.match(/^flow:\s*(\w+)\n?([\s\S]*)$/);
+      const flow = m ? m[1] : 'journal';
+      const text = (m ? m[2] : raw).trim();
+      const btn = document.createElement('button');
+      btn.className = 'btn zg-fence-btn';
+      btn.dataset.flow = flow; btn.dataset.text = text;
+      btn.textContent = `⚡ ${flow} — ${text.slice(0, 56)}${text.length > 56 ? '…' : ''}`;
+      code.parentElement.replaceWith(btn);
+    });
+    return div.innerHTML;
+  }
+  function fenceOverlay(md) {
+    let ov = document.getElementById('zg-fence-ov');
+    if (ov) ov.remove();
+    ov = document.createElement('div'); ov.id = 'zg-fence-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--surface);color:var(--ink);max-width:640px;max-height:80vh;overflow:auto;border-radius:var(--radius);padding:20px;line-height:1.5';
+    box.innerHTML = renderMarkdown(md);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('.zg-fence-btn');
+    if (!b || b.disabled) return;
+    e.preventDefault();
+    const old = b.textContent;
+    b.disabled = true; b.textContent = '⚡ rodando… (pode levar 1-2 min)';
+    try {
+      const flow = b.dataset.flow; const text = b.dataset.text;
+      let out;
+      if (flow === 'journal') out = (await api('/ziggy/journal?q=' + encodeURIComponent(text))).answer;
+      else if (flow === 'finagent') out = (await api('/ziggy/finagent', { method: 'POST', json: { text } })).answer;
+      else out = (await api('/ziggy/mcgraw', { method: 'POST', json: { flow, text } })).answer;
+      fenceOverlay(out || '(sem resposta)');
+    } catch (err) { toast('falhou: ' + err.message); }
+    b.disabled = false; b.textContent = old;
+  });
+
+  // ---- badge no ícone do PWA (iOS 16.4+): inbox do caderno + envelopes em
+  // alerta. Atualiza no boot e toda vez que a PWA volta ao foco (não há
+  // background sync em iOS — visibilitychange é o gancho certo).
+  async function updateBadge() {
+    if (!('setAppBadge' in navigator)) return;
+    try {
+      const d = await api('/badge/count');
+      if (d.count > 0) navigator.setAppBadge(d.count); else navigator.clearAppBadge();
+    } catch { /* offline/401: mantém o badge anterior */ }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && token) updateBadge();
+  });
+
   // ---- gate (o "selo": monólito + runa; ver gate.js) ----
   let gateMounted = false;
   function bootApp() {
     connectWs();
     registerSw();
+    updateBadge();
     const initial = (location.hash || '').replace('#', '') || 'hub';
     go(screens[initial] ? initial : 'hub');
   }

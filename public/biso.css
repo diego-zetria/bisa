@@ -44,6 +44,41 @@
   --biso-ink:#fff; --biso-ink-soft:#cfcfcf; --biso-line:#444;
   --biso-primary:#ffd400; --biso-primary-ink:#000; --biso-accent:#222;
 }
+/* Claude (2026-07-20): o design da sub-aba Ziggy promovido a tema do Biso —
+   papel ivory, hairlines quentes, terracotta como única cor de ação, título
+   em serifa e abas em mono. Variante noite = papel carvão. */
+.biso-root[data-theme="claude"] {
+  --biso-bg:#FAF9F5; --biso-surface:#FDFCF9; --biso-surface-2:#F1EEE6;
+  --biso-ink:#21201C; --biso-ink-soft:#6B675E; --biso-line:#E8E4DA;
+  --biso-primary:#D97757; --biso-primary-ink:#fff; --biso-accent:#F5E4DB;
+  --biso-positive:#5b8a72; --biso-negative:#B0584F;
+}
+.biso-root[data-theme="claude-noite"] {
+  --biso-bg:#1F1E1B; --biso-surface:#262624; --biso-surface-2:#2E2D2A;
+  --biso-ink:#F0EEE7; --biso-ink-soft:#A29D92; --biso-line:#3A3733;
+  --biso-primary:#D97757; --biso-primary-ink:#fff; --biso-accent:#3B2E28;
+  --biso-positive:#7EA88B; --biso-negative:#E08663;
+}
+/* Assinatura tipográfica dos temas Claude: serifa no título, mono nas abas,
+   hairline terracotta sob o header (mesma linha viva do herói da Ziggy). */
+.biso-root[data-theme^="claude"] .biso-title {
+  font-family:"Iowan Old Style","Tiempos Text",Palatino,Georgia,serif;
+  font-size:1.18rem; font-weight:600; letter-spacing:-.01em;
+}
+.biso-root[data-theme^="claude"] .biso-title small {
+  font-family:var(--biso-mono); font-size:.62rem; letter-spacing:.18em;
+  text-transform:uppercase; color:#C4643F;
+}
+.biso-root[data-theme="claude-noite"] .biso-title small { color:#E08663; }
+.biso-root[data-theme^="claude"] .biso-header {
+  border-bottom:2px solid transparent;
+  border-image:linear-gradient(90deg,#D97757,#E8A87C,#D97757) 1;
+}
+.biso-root[data-theme^="claude"] .biso-tab {
+  font-family:var(--biso-mono); font-size:.76rem; letter-spacing:.05em;
+}
+.biso-root[data-theme="claude"] .biso-tab.active { color:#C4643F; border-color:#EBCDBE; }
+.biso-root[data-theme="claude-noite"] .biso-tab.active { color:#E08663; border-color:#4A3A32; }
 
 /* ---- Header + abas de sub-view ---- */
 .biso-header {
@@ -222,6 +257,29 @@
   --nb-ts-alt: 0 0 8px rgba(111,230,255,.25);
   --nb-pop-shadow: 0 0 24px rgba(57,255,157,.18);
 }
+.biso-nb.nb-claude {
+  /* Tinta · Claude (2026-07-20): papel ivory do design Claude, a tinta do
+     Claude é terracotta e a sua voz escreve em oliva; prosa em Iowan (a
+     mesma serifa do cockpit Ziggy). color-mix tinge pautas/chips sozinho. */
+  --biso-bg: #FAF9F5; --biso-surface: #F2EFE9; --biso-surface-2: #EAE6DC;
+  --biso-ink: #21201C; --biso-ink-soft: #6B675E;
+  --biso-line: #DED9CC; --biso-primary: #C4643F; --biso-primary-ink: #FAF9F5;
+  --biso-accent: rgba(196,100,63,.08); --biso-positive: #5b8a72; --biso-negative: #B0584F;
+  --nb-alt: #5B7357;
+  --nb-font-prose: "Iowan Old Style", ui-serif, 'New York', Georgia, serif;
+}
+.biso-nb.nb-claude-noite {
+  /* Tinta · Claude noite — papel carvão quente, terracotta mais acesa */
+  --biso-bg: #1F1E1B; --biso-surface: #262624; --biso-surface-2: #2E2D2A;
+  --biso-ink: #F0EEE7; --biso-ink-soft: #A29D92;
+  --biso-line: #3A3733; --biso-primary: #E08663; --biso-primary-ink: #1F1E1B;
+  --biso-accent: rgba(217,119,87,.16); --biso-positive: #7EA88B; --biso-negative: #D9564A;
+  --nb-alt: #8FA98B;
+  --nb-font-prose: "Iowan Old Style", ui-serif, 'New York', Georgia, serif;
+  --nb-card-shadow: 0 1px 3px rgba(0,0,0,.4);
+  --nb-btn-glow: 0 3px 12px rgba(0,0,0,.45);
+  --nb-pop-shadow: 0 10px 34px rgba(0,0,0,.55);
+}
 
 /* console de escrita — quadro onde a Pencil escreve (hoje só no write pad) */
 .biso-nb-console { position: relative; flex-shrink: 0; margin: 12px clamp(12px,3vw,28px) 0;
@@ -396,11 +454,39 @@
   min-height: 40px; padding: 4px 20px; font-weight: 700; font-size: .82rem; letter-spacing: .06em;
   box-shadow: var(--nb-btn-glow); }
 
-/* chip "✎ usar trecho" ancorado na seleção (Pencil) */
-.biso-selchip { position: fixed; z-index: 60; background: var(--biso-surface-2, #e6e4d9);
-  color: var(--biso-primary, #205ea6); border: 1px solid var(--biso-primary, #205ea6); border-radius: 999px;
-  min-height: 40px; padding: 4px 16px; font-size: .82rem; letter-spacing: .06em;
-  box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+/* menu da seleção (Pencil): ▶ puxar o fio · ✎ escrever — ancorado na seleção */
+.biso-selchip { position: fixed; z-index: 1300; display: flex; gap: 6px;
+  background: var(--biso-surface-2, #e6e4d9); border: 1px solid var(--biso-primary, #205ea6);
+  border-radius: 999px; padding: 4px 6px; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
+.biso-selchip .sc-btn { background: transparent; border: 0; color: var(--biso-primary, #205ea6);
+  min-height: 34px; padding: 0 12px; font-size: .82rem; letter-spacing: .06em; border-radius: 999px; }
+.biso-selchip .sc-btn:first-child { border-right: 1px solid color-mix(in srgb, var(--biso-primary) 25%, transparent); }
+/* porta-trecho: o último trecho selecionado sobrevive à seleção perder o foco */
+.biso-quotebar { position: absolute; left: 10px; right: 10px; bottom: 64px; z-index: 55;
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: var(--biso-surface-2, #e6e4d9); border: 1px solid var(--biso-line);
+  border-radius: 14px; box-shadow: 0 6px 22px rgba(0,0,0,.3); }
+.biso-quotebar .qb-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: .82rem; font-style: italic; color: var(--biso-ink-soft); }
+.biso-quotebar .qb-btn { flex-shrink: 0; background: transparent; color: var(--biso-primary);
+  border: 1px solid var(--biso-primary); border-radius: 999px; min-height: 34px; padding: 0 12px; font-size: .78rem; }
+.biso-quotebar .qb-x { flex-shrink: 0; background: transparent; border: 0; color: var(--biso-ink-soft);
+  min-height: 34px; padding: 0 8px; font-size: .9rem; }
+/* chrome do card não é conteúdo — selecionável gerava toques fantasma (Pencil) */
+.resp-head, .resp-tools, .nb-hud, .nb-proc-steps, .biso-nb-tool, .nb-files-lbl {
+  -webkit-user-select: none; user-select: none; }
+/* turno morto: 12s sem NENHUM evento do servidor → botão de reenvio no card */
+.nb-dead-retry { display: block; background: transparent; color: var(--biso-negative);
+  border: 1px dashed var(--biso-negative); border-radius: 12px;
+  min-height: 44px; padding: 8px 16px; font-size: .88rem; }
+/* nota fixada (📌) — última .md do vault tocada na sessão, preview em 1 toque */
+.biso-notepin { display: block; margin: 6px 10px 0; padding: 7px 14px;
+  background: color-mix(in srgb, var(--biso-primary) 8%, transparent);
+  color: var(--biso-primary); border: 1px solid color-mix(in srgb, var(--biso-primary) 35%, transparent);
+  border-radius: 999px; font-size: .78rem; letter-spacing: .04em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.biso-nb-foot [data-estudo].on { color: var(--biso-primary);
+  border-color: var(--biso-primary); background: color-mix(in srgb, var(--biso-primary) 10%, transparent); }
 
 /* modo leitura — Aa no rodapé cicla normal → grande → extra */
 .biso-nb.font-lg .resp-body { font-size: 1.1rem; line-height: 1.65; }
@@ -424,6 +510,10 @@
 .biso-write-pad .wp-box { min-height: 20vh; max-height: 32vh; }
 .biso-write-pad .wp-count { flex-shrink: 0; color: var(--biso-ink-soft); font-size: .7rem;
   letter-spacing: .1em; text-transform: none; font-variant-numeric: tabular-nums; }
+/* 🎤 espelho no cabeçalho — o teclado flutuante cobria o Ditar de baixo */
+.biso-write-pad .wp-mic-mini { flex-shrink: 0; background: transparent; color: var(--biso-primary);
+  border: 1px solid color-mix(in srgb, var(--biso-primary) 40%, transparent); border-radius: 999px;
+  min-height: 30px; padding: 0 10px; font-size: .8rem; }
 .biso-write-pad .wp-lang { flex-shrink: 0; background: color-mix(in srgb, var(--nb-alt) 7%, transparent);
   color: var(--nb-alt); border: 1px solid color-mix(in srgb, var(--nb-alt) 35%, transparent);
   border-radius: 999px; min-height: 30px; padding: 0 12px;
@@ -432,8 +522,11 @@
 .wp-actions { flex-shrink: 0; display: flex; gap: 10px; margin-top: 12px; }
 .wp-actions .wp-cancel { flex: 1; background: transparent; color: var(--biso-ink-soft);
   border: 1px solid var(--biso-line); border-radius: 12px; min-height: 52px; font-size: .95rem; letter-spacing: .06em; }
-.wp-actions .wp-mic { flex: 1; background: transparent; color: var(--biso-ink-soft);
-  border: 1px solid var(--biso-line); border-radius: 12px; min-height: 52px; font-size: .95rem; letter-spacing: .06em; }
+/* Ditar promovido: nos vídeos 2026-07-19 a escrita saiu a ~16 palavras/min no
+   teclado flutuante — a voz (Whisper local) é o caminho rápido do pad */
+.wp-actions .wp-mic { flex: 1; background: color-mix(in srgb, var(--biso-primary) 8%, transparent);
+  color: var(--biso-primary); border: 1px solid var(--biso-primary);
+  border-radius: 12px; min-height: 52px; font-size: .95rem; letter-spacing: .06em; }
 .wp-actions .wp-mic.active { color: #fff; background: var(--biso-negative); border-color: var(--biso-negative);
   animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: .55; } }
@@ -453,6 +546,13 @@
   box-shadow: var(--nb-btn-glow); }
 /* fim do ditado com texto pronto → chama o olho p/ o Enviar (envio segue manual) */
 .wp-actions .wp-send.attn { animation: send-attn 1.1s ease-in-out 5; }
+/* pad VAZIO: Ditar assume o visual primário (a voz é o caminho rápido) e o
+   Enviar vira ghost; com texto os dois voltam ao normal (toggle .pad-empty) */
+.wp-actions.pad-empty .wp-mic { background: var(--biso-primary); color: var(--biso-primary-ink);
+  border: none; font-weight: 700; box-shadow: var(--nb-btn-glow); }
+.wp-actions.pad-empty .wp-mic.active { background: var(--biso-negative); border-color: var(--biso-negative); color: #fff; }
+.wp-actions.pad-empty .wp-send { background: color-mix(in srgb, var(--biso-primary) 8%, transparent);
+  color: var(--biso-primary); border: 1px solid var(--biso-primary); box-shadow: none; font-weight: 400; }
 @keyframes send-attn { 50% { transform: scale(1.04);
   box-shadow: 0 0 22px color-mix(in srgb, var(--biso-primary) 65%, transparent); } }
 .wp-spacer { flex: 1; min-height: 8px; }
@@ -463,8 +563,12 @@
 .wp-pred-bar { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--biso-line) 60%, transparent); overflow: hidden; }
 .wp-pred-bar i { display: block; height: 100%; background: var(--biso-primary); border-radius: 3px; transition: width .35s ease; }
 .wp-pred-pct { font-size: .8rem; font-weight: 700; color: var(--biso-primary); min-width: 38px; text-align: right; }
-.wp-pred-chip { background: transparent; color: var(--biso-ink-soft); border: 1px dashed var(--biso-line);
-  border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: .85rem; font-style: italic; }
+/* chip de sugestão COM CARA DE BOTÃO — no vídeo 2026-07-15 as sugestões nunca
+   foram tocadas: o tracejado transparente lia como decoração, não como ação. */
+.wp-pred-chip { background: color-mix(in srgb, var(--biso-primary) 10%, transparent);
+  color: var(--biso-ink); border: 1px solid var(--biso-primary);
+  border-radius: 999px; min-height: 38px; padding: 4px 14px; font-size: .85rem; cursor: pointer; }
+.wp-pred-chip:active { background: color-mix(in srgb, var(--biso-primary) 22%, transparent); }
 /* limpar ditado com o Claude — modos por destino + volta ao bruto */
 .wp-modes { flex-shrink: 0; display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .wp-modes-lbl { font-size: .68rem; letter-spacing: .16em; text-transform: uppercase; color: var(--biso-ink-soft); opacity: .7; }
@@ -584,6 +688,11 @@
 .biso-nb-foot { display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--biso-line); background: var(--biso-surface); }
 .biso-nb-status { font-size: .72rem; color: var(--biso-ink-soft); letter-spacing: .12em; text-transform: uppercase; }
+/* fila de 1 turno — pílula discreta ao lado do status; toque devolve ao pad */
+.biso-queue-pill { background: color-mix(in srgb, var(--biso-primary) 10%, transparent);
+  color: var(--biso-primary); border: 1px dashed var(--biso-primary); border-radius: 999px;
+  font-size: .68rem; letter-spacing: .04em; padding: 4px 10px; min-height: 30px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42vw; flex: 0 1 auto; }
 
 /* ---- Menu radial (Pencil quick actions) ---- */
 .biso-radial-fab { position: fixed; right: 18px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
@@ -612,3 +721,164 @@
 .biso-action-tile .ic { font-size: 1.5rem; line-height: 1; }
 .biso-action-tile .lb { font-size: .72rem; text-align: center; line-height: 1.15; color: var(--biso-ink-soft); }
 .biso-action-tile.edit { border-style: dashed; }
+
+/* ── HUD de atividade do caderno (turno rodando) ─────────────────────────── */
+.nb-hud { margin: 6px 0 10px; padding: 10px 12px; border: 1px solid var(--biso-line);
+  border-radius: 12px; background: color-mix(in srgb, var(--biso-line) 12%, transparent);
+  display: flex; flex-direction: column; gap: 6px; font-size: .86rem; }
+.nb-hud:empty { display: none; }
+.hud-todos:empty, .hud-steps:empty, .hud-think:empty, .hud-tick:empty { display: none; }
+.hud-todo { display: flex; gap: 8px; align-items: baseline; color: var(--biso-ink-soft); padding: 1px 0; }
+.hud-todo.done { opacity: .55; text-decoration: line-through; }
+.hud-todo.run { color: var(--biso-ink); font-weight: 600; }
+.hud-todo.run span { color: var(--biso-primary); }
+.hud-steps { display: flex; flex-direction: column; gap: 3px; }
+.hud-step { display: flex; gap: 8px; align-items: center; color: var(--biso-ink-soft); min-height: 22px; }
+.hud-step.run { color: var(--biso-ink); }
+.hud-step.done .hud-ic { color: var(--biso-primary); }
+.hud-step.sum { opacity: .6; font-size: .8rem; }
+.hud-dur { margin-left: auto; opacity: .55; font-size: .75rem; font-variant-numeric: tabular-nums; }
+.hud-spin { display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--biso-line); border-top-color: var(--biso-primary);
+  animation: hud-spin .8s linear infinite; }
+@keyframes hud-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hud-spin { animation: none; } }
+.hud-think-tg { background: none; border: none; color: var(--biso-ink-soft); font-size: .82rem;
+  padding: 2px 0; cursor: pointer; }
+.hud-think-bd { max-height: 110px; overflow-y: auto; font-style: italic; opacity: .6;
+  font-size: .8rem; white-space: pre-wrap; padding: 2px 0 2px 14px;
+  border-left: 2px solid var(--biso-line); }
+.hud-tick { display: flex; gap: 6px; align-items: center; font-size: .76rem;
+  color: var(--biso-ink-soft); font-variant-numeric: tabular-nums; opacity: .8; }
+.hud-sep { opacity: .4; }
+
+/* timeline preservada dentro do accordion "processo" */
+.nb-proc-steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px dashed var(--biso-line); font-size: .82rem; }
+
+/* ── mini-índice de resposta longa (≥3 headings) ─────────────────────────── */
+.nb-idx { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  padding: 2px 0 8px; margin-bottom: 10px; border-bottom: 1px dashed var(--biso-line); }
+.nb-idx-chip { flex: 0 0 auto; font-family: var(--biso-mono); font-size: .7rem;
+  color: var(--biso-ink-soft); background: transparent; border: 1px solid var(--biso-line);
+  border-radius: 999px; padding: 3px 10px; min-height: 28px; white-space: nowrap; cursor: pointer; }
+.nb-idx-fim { color: var(--biso-primary); border-color: color-mix(in srgb, var(--biso-primary) 45%, transparent); }
+
+/* ── arquivos do turno ───────────────────────────────────────────────────── */
+.nb-files { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; }
+.nb-files-lbl { font-size: .76rem; color: var(--biso-ink-soft); opacity: .8; margin-right: 2px; }
+.nb-file-chip { background: color-mix(in srgb, var(--biso-primary) 12%, transparent);
+  color: var(--biso-ink); border: 1px solid color-mix(in srgb, var(--biso-primary) 45%, transparent);
+  border-radius: 999px; padding: 5px 12px; font-size: .82rem; cursor: pointer; min-height: 34px; }
+/* Leitor de arquivo — dentro do .biso-root (herda tema); topo com faixa da
+   cor primária, título forte, corpo com tipografia de leitura e cores. */
+.nb-file-ov { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 60;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.nb-file-box { background: var(--biso-surface); color: var(--biso-ink);
+  border: 1px solid var(--biso-line); border-top: 3px solid var(--biso-primary);
+  border-radius: 16px; max-width: 900px; width: 100%; max-height: 86vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+.nb-file-head { display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px; border-bottom: 1px solid var(--biso-line);
+  background: var(--biso-surface-2); }
+.nb-file-ic { font-size: 1.5rem; line-height: 1; }
+.nb-file-tt { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.nb-file-name { font-weight: 700; font-size: 1.02rem; color: var(--biso-ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-file-path { font-family: var(--biso-mono); font-size: .68rem;
+  color: var(--biso-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-file-corp { background: color-mix(in srgb, var(--biso-primary) 12%, transparent);
+  color: var(--biso-primary); border: 1px solid color-mix(in srgb, var(--biso-primary) 45%, transparent);
+  border-radius: 999px; min-height: 38px; padding: 0 14px; font-size: .82rem;
+  cursor: pointer; flex: 0 0 auto; }
+.nb-file-corp:disabled { opacity: .4; cursor: default; }
+.nb-file-x { background: color-mix(in srgb, var(--biso-line) 45%, transparent);
+  border: none; color: var(--biso-ink); font-size: 1rem; border-radius: 999px;
+  cursor: pointer; width: 38px; height: 38px; flex: 0 0 auto; }
+.nb-file-bd { overflow: auto; padding: 18px 22px 26px; -webkit-overflow-scrolling: touch; }
+.nb-file-bd .resp-body { font-size: .95rem; line-height: 1.6; color: var(--biso-ink); }
+.nb-file-bd .resp-body h1 { font-size: 1.35rem; color: var(--biso-primary);
+  border-bottom: 1px solid var(--biso-line); padding-bottom: 8px; margin: 4px 0 14px; }
+.nb-file-bd .resp-body h2 { font-size: 1.12rem; color: var(--biso-ink); margin: 20px 0 8px;
+  padding-left: 10px; border-left: 3px solid var(--biso-primary); }
+.nb-file-bd .resp-body h3 { font-size: 1rem; color: var(--biso-ink); margin: 16px 0 6px; }
+.nb-file-bd .resp-body a { color: var(--biso-primary); }
+.nb-file-bd .resp-body blockquote { border-left: 3px solid var(--biso-primary);
+  background: color-mix(in srgb, var(--biso-primary) 7%, transparent);
+  margin: 10px 0; padding: 8px 14px; border-radius: 0 8px 8px 0; color: var(--biso-ink); }
+.nb-file-bd .resp-body li { margin: 3px 0; }
+.nb-file-bd .resp-body hr { border: none; border-top: 1px solid var(--biso-line); margin: 16px 0; }
+.nb-file-pre { white-space: pre-wrap; font-size: .84rem; margin: 0;
+  font-family: var(--biso-mono); color: var(--biso-ink); }
+
+/* ── tabelas e código na resposta ────────────────────────────────────────── */
+.nb-tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; position: relative; }
+/* coluna cortada ganha pista visível (fade + ⇢) até o primeiro scroll */
+.nb-tbl-scroll.cut { -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); mask-image: linear-gradient(to right, #000 88%, transparent); }
+.nb-tbl-scroll.cut::after { content: '⇢ deslize'; position: sticky; left: calc(100% - 76px);
+  display: inline-block; font-size: .66rem; letter-spacing: .08em; color: var(--biso-ink-soft); opacity: .8; }
+.nb-tbl-scroll table { min-width: max-content; }
+.nb-tbl-scroll td, .nb-tbl-scroll th { word-break: keep-all; hyphens: none; }
+.resp-body pre { position: relative; }
+.nb-copy { position: absolute; top: 6px; right: 6px; font-size: .72rem;
+  background: color-mix(in srgb, var(--biso-line) 40%, transparent); color: var(--biso-ink-soft);
+  border: 1px solid var(--biso-line); border-radius: 8px; padding: 3px 9px; cursor: pointer; }
+
+/* ── pad de escrita: envio no topo + sugestões com cara de botão ─────────── */
+.wp-send-mini { margin-left: auto; background: var(--biso-primary); color: var(--biso-primary-ink);
+  border: none; border-radius: 999px; padding: 6px 14px; font-size: .82rem; font-weight: 600;
+  cursor: pointer; min-height: 34px; }
+.wp-send-mini:disabled { opacity: .35; cursor: default; }
+.con-head .wp-count { margin-left: 0; }
+
+/* ── Evolução (changelog interativo, aba ✨) ─────────────────────────────── */
+.evo-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 14px; }
+.evo-h-tt { font-size: 1.25rem; font-weight: 700; color: var(--biso-ink); }
+.evo-h-sub { font-size: .78rem; color: var(--biso-ink-soft); width: 100%; order: 3; }
+.evo-resume { margin-left: auto; background: var(--biso-accent); color: var(--biso-ink);
+  border: 1px solid var(--biso-line); border-radius: 999px; min-height: 40px; padding: 0 16px;
+  font-size: .85rem; font-weight: 600; box-shadow: var(--nb-btn-glow); }
+.evo-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.evo-chip { background: var(--biso-surface); border: 1px solid var(--biso-line); color: var(--biso-ink-soft);
+  border-radius: 999px; min-height: 36px; padding: 0 14px; font-size: .84rem; }
+.evo-chip.on { background: var(--biso-accent); color: var(--biso-ink); border-color: var(--biso-primary); font-weight: 600; }
+
+/* linha do tempo: trilho vertical + pontos */
+.evo-timeline { position: relative; padding-left: 4px; }
+.evo-date { display: flex; align-items: baseline; gap: 9px; margin: 18px 0 10px 40px; }
+.evo-date:first-child { margin-top: 0; }
+.evo-date-abs { font-size: .74rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--biso-ink-soft); }
+.evo-ago { font-size: .72rem; color: var(--biso-ink-soft); opacity: .7;
+  background: var(--biso-surface-2); border-radius: 999px; padding: 1px 9px; text-transform: none; letter-spacing: 0; }
+.evo-item { position: relative; display: flex; gap: 14px; padding: 0 0 14px 0; }
+.evo-item::before { content: ''; position: absolute; left: 17px; top: 34px; bottom: -2px; width: 2px;
+  background: var(--biso-line); }
+.evo-item:last-child::before { display: none; }
+.evo-dot { position: relative; z-index: 1; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.05rem; background: var(--biso-surface-2);
+  border: 2px solid var(--evo-c, var(--biso-primary)); box-shadow: 0 0 0 3px var(--biso-bg); }
+.evo-body { flex: 1; min-width: 0; background: var(--biso-surface); border: 1px solid var(--biso-line);
+  border-radius: 14px; padding: 11px 14px; box-shadow: var(--nb-card-shadow); }
+.evo-item.has-detail .evo-body { cursor: pointer; }
+.evo-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; flex-wrap: wrap; }
+.evo-badge { color: #fff; font-size: .66rem; font-weight: 700; letter-spacing: .04em;
+  border-radius: 999px; padding: 2px 9px; text-transform: uppercase; }
+.evo-tag { font-size: .66rem; font-weight: 600; letter-spacing: .04em; border-radius: 999px;
+  padding: 2px 9px; text-transform: uppercase; border: 1px solid var(--biso-line); color: var(--biso-ink-soft); }
+.evo-tag-novo { color: var(--biso-primary); border-color: var(--biso-primary); }
+.evo-tag-correção, .evo-tag-correcao { color: var(--biso-negative); border-color: color-mix(in srgb, var(--biso-negative) 45%, transparent); }
+.evo-new { margin-left: auto; font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--biso-primary); background: color-mix(in srgb, var(--biso-primary) 14%, transparent);
+  border-radius: 999px; padding: 2px 8px; }
+.evo-title { font-weight: 650; font-size: 1.02rem; color: var(--biso-ink); line-height: 1.3; }
+.evo-summary { font-size: .9rem; color: var(--biso-ink-soft); line-height: 1.5; margin-top: 3px; }
+.evo-detail { font-size: .88rem; color: var(--biso-ink); line-height: 1.55; margin-top: 0;
+  max-height: 0; overflow: hidden; opacity: 0; transition: max-height .28s ease, opacity .2s ease, margin-top .28s ease;
+  border-top: 1px dashed var(--biso-line); }
+.evo-item.open .evo-detail { max-height: 320px; opacity: 1; margin-top: 9px; padding-top: 9px; }
+.evo-item.has-detail .evo-title::after { content: ' ▸'; color: var(--biso-ink-soft); font-size: .8em; }
+.evo-item.open .evo-title::after { content: ' ▾'; }
+@media (prefers-reduced-motion: reduce) { .evo-detail { transition: none; } }
