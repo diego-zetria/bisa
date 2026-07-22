@@ -482,6 +482,12 @@
     const hm = new Date(fin.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const head = document.createElement('div');
     head.innerHTML = '<h4>' + t('finTitle') + ' · ' + hm + '</h4>';
+    if (fin.agenda) {
+      const ag = document.createElement('div'); ag.className = 'zg-ctx-at';
+      ag.textContent = '📅 ' + fin.agenda.time + ' — ' + fin.agenda.title
+        + (fin.agenda.tags && fin.agenda.tags.length ? ' · ' + fin.agenda.tags.join(' ') : '');
+      head.appendChild(ag);
+    }
     const sum = document.createElement('div'); sum.className = 'zg-ctx-sum';
     sum.textContent = fin.resumo;
     head.appendChild(sum);
