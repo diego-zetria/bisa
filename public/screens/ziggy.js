@@ -154,6 +154,11 @@
       .zg-ctx-mat .m { margin-bottom:9px; }
       .zg-ctx-mat .m b { display:block; font-size:.85rem; }
       .zg-ctx-empty { font-size:.85rem; color:var(--zg-soft); line-height:1.55; }
+      .zg-fin-saved { font-family:var(--zg-mono); font-size:.68rem; color:var(--zg-acc-deep);
+        line-height:1.7; background:var(--zg-acc-soft); border-radius:10px; padding:8px 12px; }
+      .zg-copy { font-family:var(--zg-mono); font-size:.7rem; color:var(--zg-acc-deep);
+        background:var(--zg-acc-soft); border:none; border-radius:999px; padding:7px 15px;
+        cursor:pointer; align-self:flex-start; }
       .zg-ctx-at { font-family:var(--zg-mono); font-size:.64rem; color:var(--zg-soft);
         font-variant-numeric:tabular-nums; letter-spacing:.06em; }
       .zg-silence { display:none; margin:0 0 12px; padding:10px 13px; border-radius:10px;
@@ -255,6 +260,11 @@
       mention: '📣 falaram de você',
       ctxSum: 'resumo da reunião', ctxMat: 'do nosso McGraw', ctxSay: 'com base no que temos',
       ctxEmpty: 'o painel de contexto acorda ~1 min depois que a conversa começa — resumo ao vivo, docs nossos sobre o assunto e falas prontas.',
+      ctxWaiting: '⏳ coletando contexto — resumo ao vivo, docs nossos e falas prontas aparecem aqui em ~1 min.',
+      finalizing: '🏁 encerrando — gerando o resumo final…',
+      finTitle: '🏁 resumo final', finTopics: 'tópicos importantes', finActions: 'ações necessárias',
+      finMat: 'arquivos relacionados', finSavedAta: '✓ ata salva em {f}', finSavedFu: '{n} ações → {f}',
+      finCopy: '⧉ copiar resumo', finCopied: '✓ copiado',
       ctxAt: 'atualizado às {t}',
       cmTitle: 'Como falar com a Echo',
       flTitle: 'Fluxos & automações',
@@ -308,6 +318,11 @@
       mention: '📣 they mentioned you',
       ctxSum: 'meeting summary', ctxMat: 'from our McGraw', ctxSay: 'grounded in our docs',
       ctxEmpty: 'the context panel wakes up ~1 min into the conversation — live summary, our docs on the topic, ready-to-say lines.',
+      ctxWaiting: '⏳ gathering context — live summary, our docs and ready-to-say lines show up here in ~1 min.',
+      finalizing: '🏁 wrapping up — generating the final summary…',
+      finTitle: '🏁 final summary', finTopics: 'key topics', finActions: 'action items',
+      finMat: 'related files', finSavedAta: '✓ minutes saved to {f}', finSavedFu: '{n} actions → {f}',
+      finCopy: '⧉ copy summary', finCopied: '✓ copied',
       ctxAt: 'updated at {t}',
       cmTitle: 'Talking to the Echo',
       flTitle: 'Flows & automations',
@@ -365,7 +380,10 @@
       else if (staleMin >= 2) warn = t('stale').replace('{m}', staleMin);
       ui.sil.classList.toggle('on', !!warn);
       if (warn) ui.sil.textContent = warn;
-      renderCtx(ui, d.context);
+      // Sessão parada com fechamento disponível (ou em geração): o painel de
+      // contexto vira o resumo final — parar não descarta mais nada (2026-07-22).
+      if (!d.active && (d.final || d.finalizing)) renderFinal(ui, d.final);
+      else renderCtx(ui, d.context, !!d.active);
       ui.feed.innerHTML = '';
       const items = (d.digests || []).slice().reverse();
       if (!items.length) {
@@ -404,11 +422,11 @@
 
   // Painel de contexto (camada Sonnet do bridge, ~2 em 2 min): resumo
   // acumulado + materiais do McGraw sobre o assunto + falas fundamentadas.
-  function renderCtx(ui, ctx) {
+  function renderCtx(ui, ctx, active) {
     if (!ctx || !ctx.summary) {
       ui.ctx.innerHTML = '';
       const p = document.createElement('p'); p.className = 'zg-ctx-empty';
-      p.textContent = t('ctxEmpty');
+      p.textContent = active ? t('ctxWaiting') : t('ctxEmpty');
       ui.ctx.appendChild(p);
       return;
     }
@@ -448,6 +466,56 @@
       at.textContent = t('ctxAt').replace('{t}', new Date(ctx.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
       ui.ctx.appendChild(at);
     }
+  }
+
+  // Fechamento da reunião: resumo final + tópicos + ações + arquivos ligados,
+  // com confirmação do que foi salvo onde e botão de copiar. Fica na tela até
+  // a próxima sessão começar (o bridge guarda em lastFinal).
+  function renderFinal(ui, fin) {
+    ui.ctx.innerHTML = '';
+    if (!fin) {
+      const p = document.createElement('p'); p.className = 'zg-ctx-empty';
+      p.textContent = t('finalizing');
+      ui.ctx.appendChild(p);
+      return;
+    }
+    const hm = new Date(fin.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const head = document.createElement('div');
+    head.innerHTML = '<h4>' + t('finTitle') + ' · ' + hm + '</h4>';
+    const sum = document.createElement('div'); sum.className = 'zg-ctx-sum';
+    sum.textContent = fin.resumo;
+    head.appendChild(sum);
+    ui.ctx.appendChild(head);
+    const sec = (title, items, line) => {
+      if (!items || !items.length) return;
+      const b = document.createElement('div');
+      b.innerHTML = '<h4>' + title + '</h4>';
+      const list = document.createElement('div'); list.className = 'zg-ctx-mat';
+      for (const x of items) {
+        const it = document.createElement('div'); it.className = 'm';
+        if (line) it.textContent = line + x;
+        else it.innerHTML = '<b>' + escH(x.title || '') + '</b>' + escH(x.note || '');
+        list.appendChild(it);
+      }
+      b.appendChild(list);
+      ui.ctx.appendChild(b);
+    };
+    sec('💡 ' + t('finTopics'), fin.topicos, '• ');
+    sec('☑️ ' + t('finActions'), fin.acoes, '☐ ');
+    sec('📂 ' + t('finMat'), fin.materials);
+    const saved = document.createElement('div'); saved.className = 'zg-fin-saved';
+    saved.textContent = t('finSavedAta').replace('{f}', fin.ata)
+      + (fin.followups ? ' · ' + t('finSavedFu').replace('{n}', fin.acoes.length).replace('{f}', fin.followups) : '');
+    ui.ctx.appendChild(saved);
+    const cp = document.createElement('button'); cp.className = 'zg-copy';
+    cp.textContent = t('finCopy');
+    cp.onclick = () => {
+      const txt = fin.resumo
+        + (fin.topicos.length ? '\n\n' + t('finTopics') + ':\n' + fin.topicos.map((x) => '- ' + x).join('\n') : '')
+        + (fin.acoes.length ? '\n\n' + t('finActions') + ':\n' + fin.acoes.map((x) => '- [ ] ' + x).join('\n') : '');
+      navigator.clipboard.writeText(txt).then(() => { cp.textContent = t('finCopied'); setTimeout(() => { cp.textContent = t('finCopy'); }, 2000); }).catch(() => {});
+    };
+    ui.ctx.appendChild(cp);
   }
 
   // --- guia de comandos: parseia o COMANDOS.md (seções ## + tabelas) em
