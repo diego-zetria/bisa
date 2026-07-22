@@ -58,12 +58,21 @@
       border-radius:999px; padding:7px 14px; font-size:.82rem; }
     .ag-empty { opacity:.55; padding:14px 4px; font-size:.9rem; }
     .ag-overlay { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:600; display:flex; align-items:center; justify-content:center; padding:24px; }
-    .ag-sheet { background:var(--biso-bg,#1c1c1e); color:inherit; border-radius:18px; max-width:720px; width:100%;
+    .ag-sheet { background:var(--biso-surface, var(--biso-bg, #fff)); color:var(--biso-ink, #222);
+      border-radius:18px; max-width:760px; width:100%;
       max-height:82vh; display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--biso-line,#3333); }
     .ag-sheet header { display:flex; align-items:center; padding:12px 16px; border-bottom:1px solid var(--biso-line,#3333); }
     .ag-sheet header b { flex:1; font-size:.95rem; }
     .ag-sheet header button { border:none; background:transparent; color:inherit; font-size:1.15rem; min-width:44px; min-height:40px; }
-    .ag-sheet pre { margin:0; padding:16px; overflow:auto; white-space:pre-wrap; font-size:.84rem; line-height:1.55; font-family:ui-monospace,monospace; }
+    .ag-md { margin:0; padding:16px 20px; overflow:auto; -webkit-overflow-scrolling:touch;
+      font-size:.95rem; line-height:1.6; }
+    .ag-md h1 { font-size:1.15rem; margin:18px 0 8px; }
+    .ag-md h2 { font-size:1rem; margin:18px 0 6px; border-top:1px solid var(--biso-line,#3333); padding-top:14px; }
+    .ag-md ul { padding-left:22px; }
+    .ag-md li { margin:3px 0; }
+    .ag-md input[type=checkbox] { transform:scale(1.15); margin-right:6px; }
+    .ag-md p { margin:8px 0; }
+    .ag-md strong { color:var(--biso-primary, inherit); }
   `;
 
   async function fetchDay(date) {
@@ -87,13 +96,16 @@
     const x = document.createElement('button'); x.textContent = '✕';
     x.addEventListener('click', () => ov.remove());
     head.append(b, x);
-    const pre = document.createElement('pre'); pre.textContent = 'carregando…';
-    sheet.append(head, pre); ov.appendChild(sheet);
+    const body = document.createElement('div'); body.className = 'ag-md';
+    body.textContent = 'carregando…';
+    sheet.append(head, body); ov.appendChild(sheet);
     ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
-    document.body.appendChild(ov);
+    // dentro do root do Biso: a folha herda as variáveis do tema ativo
+    // (no body ela pegava cor do tema da página — texto invisível no escuro).
+    ((rootEl && rootEl.closest('.biso-root')) || document.body).appendChild(ov);
     BISA.api('/file?path=' + encodeURIComponent(relPath))
-      .then((r) => { pre.textContent = r.content || '(vazio)'; })
-      .catch((e) => { pre.textContent = 'erro: ' + e.message; });
+      .then((r) => { body.innerHTML = BISA.renderMarkdown(r.content || '(vazio)'); })
+      .catch((e) => { body.textContent = 'erro: ' + e.message; });
   }
 
   // Item de agenda com gravação por perto? (mesma janela do vínculo do bridge)
