@@ -109,7 +109,7 @@
 
   // ── Shell ──────────────────────────────────────────────────────────────
   const VIEWS = [
-    { id: 'caderno', label: 'Caderno' }, { id: 'ziggy', label: '⚡ Ziggy' }, { id: 'notas', label: 'Notas' }, { id: 'canvas', label: 'Canvas' }, { id: 'fit', label: 'Fit' },
+    { id: 'caderno', label: 'Caderno' }, { id: 'ziggy', label: '⚡ Ziggy' }, { id: 'agenda', label: '📅 Agenda' }, { id: 'notas', label: 'Notas' }, { id: 'canvas', label: 'Canvas' }, { id: 'fit', label: 'Fit' },
     { id: 'evolucao', label: '✨ Evolução' },
     { id: 'journal', label: 'Diário' }, { id: 'files', label: 'Arquivos' }, { id: 'ask', label: 'Buscar' }, { id: 'gain', label: 'GAIN' },
   ];
@@ -148,6 +148,7 @@
     if (currentView === 'notas' && window.BISO_NOTAS) window.BISO_NOTAS.unmount();   // limpa listeners da escrita
     if (currentView === 'canvas' && window.BISO_CANVAS) window.BISO_CANVAS.unmount();
     if (currentView === 'fit' && window.BISO_FIT) window.BISO_FIT.unmount();
+    if (currentView === 'agenda' && window.BISO_AGENDA) window.BISO_AGENDA.unmount();
     if (currentView === 'ziggy' && window.BISA.screens.ziggy) window.BISA.screens.ziggy.unmount();
     currentView = id;
     root.querySelectorAll('.biso-tab').forEach((b, i) => b.classList.toggle('active', VIEWS[i].id === id));
@@ -156,11 +157,12 @@
   function renderView() {
     if (currentView !== 'caderno') { nbScroll = nbPage = nbStatus = nbInterrupt = nbWrap = nbFoot = null; }
     contentEl.innerHTML = '';
-    if (radialFab) radialFab.style.display = (currentView === 'notas' || currentView === 'canvas' || currentView === 'fit' || currentView === 'evolucao' || currentView === 'ziggy') ? 'none' : '';   // FAB de ações é do dev-chat
+    if (radialFab) radialFab.style.display = (currentView === 'notas' || currentView === 'canvas' || currentView === 'fit' || currentView === 'evolucao' || currentView === 'ziggy' || currentView === 'agenda') ? 'none' : '';   // FAB de ações é do dev-chat
     if (currentView === 'caderno') renderNotebook();
     else if (currentView === 'notas') { if (window.BISO_NOTAS) window.BISO_NOTAS.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">notas.js não carregou.</p>'; }
     else if (currentView === 'canvas') { if (window.BISO_CANVAS) window.BISO_CANVAS.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">canvas.js não carregou.</p>'; }
     else if (currentView === 'fit') { if (window.BISO_FIT) window.BISO_FIT.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">fit.js não carregou.</p>'; }
+    else if (currentView === 'agenda') { if (window.BISO_AGENDA) window.BISO_AGENDA.mount(contentEl); else contentEl.innerHTML = '<p class="biso-muted" style="padding:20px">agenda.js não carregou.</p>'; }
     // Ziggy (cockpit de trabalho) mora aqui como sub-aba (decisão 2026-07-20);
     // a tela se registra em BISA.screens e precisa de um scroller próprio
     // (biso-content é overflow:hidden).
@@ -2062,6 +2064,7 @@
       if (currentView === 'notas' && window.BISO_NOTAS) window.BISO_NOTAS.unmount();
       if (currentView === 'canvas' && window.BISO_CANVAS) window.BISO_CANVAS.unmount();
       if (currentView === 'fit' && window.BISO_FIT) window.BISO_FIT.unmount();
+      if (currentView === 'agenda' && window.BISO_AGENDA) window.BISO_AGENDA.unmount();
       if (currentView === 'ziggy' && window.BISA.screens.ziggy) window.BISA.screens.ziggy.unmount();
       document.querySelectorAll('.biso-radial-overlay, .notas-ov, .cv-ov, .cv-imgview, .ia-root, .iae-root, .ia-notepop').forEach(o => o.remove());
       saveConvo();      // preserva o transcript p/ a próxima visita
