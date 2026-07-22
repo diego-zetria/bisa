@@ -136,6 +136,10 @@
       .zg-d:first-child { border-top:none; }
       .zg-d time { font-family:var(--zg-mono); font-size:.68rem; color:var(--zg-soft);
         padding-top:4px; font-variant-numeric:tabular-nums; }
+      .zg-d.mention { background:var(--zg-acc-soft); border-radius:10px;
+        padding-left:8px; padding-right:8px; border-top:none; }
+      .zg-mention { font-family:var(--zg-mono); font-size:.66rem; letter-spacing:.14em;
+        text-transform:uppercase; color:var(--zg-acc-deep); margin-bottom:4px; }
       .zg-say { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px; }
       .zg-chip { font-size:.85rem; color:var(--zg-acc-deep); background:var(--zg-acc-soft);
         border-radius:999px; padding:5px 13px; line-height:1.4; }
@@ -246,6 +250,9 @@
       empty: 'nenhum digest ainda — os blocos aparecem aqui conforme a reunião rola.',
       full: '⛶ tela cheia', fullOff: '✕ sair',
       silence: '🤫 só silêncio há ~{s}s — a reunião está tocando perto de mim? (o som precisa chegar neste Mac: sistema ou microfone)',
+      errBiso: '⚠ o resumidor falhou nos últimos {n} blocos — tentando de novo; o transcript segue sendo salvo',
+      stale: '⏳ sem digest novo há {m} min — reunião em silêncio ou em pausa',
+      mention: '📣 falaram de você',
       ctxSum: 'resumo da reunião', ctxMat: 'do nosso McGraw', ctxSay: 'com base no que temos',
       ctxEmpty: 'o painel de contexto acorda ~1 min depois que a conversa começa — resumo ao vivo, docs nossos sobre o assunto e falas prontas.',
       ctxAt: 'atualizado às {t}',
@@ -296,6 +303,9 @@
       empty: 'no digests yet — blocks show up here as the meeting goes.',
       full: '⛶ full screen', fullOff: '✕ exit',
       silence: "🤫 nothing but silence for ~{s}s — is the meeting playing near me? (audio must reach this Mac: system or mic)",
+      errBiso: '⚠ the digester failed on the last {n} blocks — retrying; transcripts are still being saved',
+      stale: '⏳ no new digest for {m} min — meeting silent or on a break',
+      mention: '📣 they mentioned you',
       ctxSum: 'meeting summary', ctxMat: 'from our McGraw', ctxSay: 'grounded in our docs',
       ctxEmpty: 'the context panel wakes up ~1 min into the conversation — live summary, our docs on the topic, ready-to-say lines.',
       ctxAt: 'updated at {t}',
@@ -344,11 +354,17 @@
       if (state.tgBtn && !state.tgBtn.disabled) state.tgBtn.textContent = state.active ? t('tgOff') : t('tgOn');
       ui.live.textContent = (d.active ? t('tkOn') : t('tkOff')) + (d.radio ? t('radioOn') : '');
       ui.live.classList.toggle('on', !!d.active);
-      // Aviso de silêncio: 3+ blocos seguidos descartados = ninguém está
-      // falando OU o áudio da reunião não chega neste Mac (lição 2026-07-20).
-      const silent = d.active && (d.silentBlocks || 0) >= 3;
-      ui.sil.classList.toggle('on', silent);
-      if (silent) ui.sil.textContent = t('silence').replace('{s}', (d.silentBlocks || 0) * 30);
+      // Aviso no topo, por prioridade: erro do biso (2+ blocos falhando,
+      // incidente 2026-07-21) > silêncio (3+ blocos descartados, lição
+      // 2026-07-20) > sem digest há 2+ min (sinal de vida do pipeline).
+      const errN = d.active ? (d.errorStreak || 0) : 0;
+      const staleMin = d.active && d.lastDigestTs ? Math.floor((Date.now() - d.lastDigestTs) / 60000) : 0;
+      let warn = '';
+      if (errN >= 2) warn = t('errBiso').replace('{n}', errN);
+      else if (d.active && (d.silentBlocks || 0) >= 3) warn = t('silence').replace('{s}', (d.silentBlocks || 0) * 30);
+      else if (staleMin >= 2) warn = t('stale').replace('{m}', staleMin);
+      ui.sil.classList.toggle('on', !!warn);
+      if (warn) ui.sil.textContent = warn;
       renderCtx(ui, d.context);
       ui.feed.innerHTML = '';
       const items = (d.digests || []).slice().reverse();
@@ -360,11 +376,16 @@
         return;
       }
       for (const x of items) {
-        const div = document.createElement('div'); div.className = 'zg-d';
+        const div = document.createElement('div'); div.className = 'zg-d' + (x.mention ? ' mention' : '');
         const tm = document.createElement('time');
         tm.textContent = new Date(x.ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         div.appendChild(tm);
         const body = document.createElement('div');
+        if (x.mention) {
+          const mk = document.createElement('div'); mk.className = 'zg-mention';
+          mk.textContent = t('mention');
+          body.appendChild(mk);
+        }
         body.appendChild(document.createTextNode(x.text));
         if (x.say && x.say.length) {
           const row = document.createElement('div'); row.className = 'zg-say';
