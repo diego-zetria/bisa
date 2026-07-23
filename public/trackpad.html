@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>🖱 Mouse do Mac</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; overscroll-behavior:none; }
+  body { font:-apple-system, sans-serif; background:#14161a; color:#c8cdd6;
+    display:flex; flex-direction:column; touch-action:none; }
+  header { display:flex; align-items:center; gap:12px; padding:12px 16px;
+    padding-top:calc(12px + env(safe-area-inset-top)); font-size:.8rem; flex-wrap:wrap; }
+  header .dot { width:9px; height:9px; border-radius:50%; background:#5a616e; flex:none; }
+  header .dot.on { background:#3fb26b; box-shadow:0 0 8px #3fb26b; }
+  header .hud { font-variant-numeric:tabular-nums; color:#8a93a3; }
+  header .sens { margin-left:auto; display:flex; align-items:center; gap:6px; color:#8a93a3; font-size:.74rem; }
+  header input[type=range] { width:110px; }
+  #stage { flex:1; display:flex; gap:10px; margin:0 14px; min-height:0; }
+  #pad { flex:1; border-radius:22px; background:#1c1f25; border:1.5px solid #262b33;
+    position:relative; touch-action:none; overflow:hidden; }
+  #pad.drag { border-color:#f0a44a; background:#221e18; }
+  #pad .hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#3b414c; font-size:.82rem; text-align:center; line-height:1.9; pointer-events:none; padding:0 18px; }
+  #strip { width:46px; border-radius:16px; background:#1c1f25; border:1.5px solid #262b33;
+    touch-action:none; position:relative; }
+  #strip::before { content:'⇅'; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    color:#3b414c; font-size:1.1rem; }
+  footer { display:flex; gap:12px; padding:14px;
+    padding-bottom:calc(14px + env(safe-area-inset-bottom)); }
+  footer button { flex:1; min-height:56px; border-radius:16px; border:1.5px solid #262b33;
+    background:#1c1f25; color:#c8cdd6; font:600 .92rem -apple-system, sans-serif; }
+  footer button:active { background:#2a313b; border-color:#3fb26b; }
+
+  /* controle flutuante em "liquid glass" que segue o ponteiro (logo acima) */
+  #cluster { position:absolute; z-index:7; display:flex; align-items:stretch;
+    border-radius:19px; overflow:hidden; touch-action:none; left:0; top:0;
+    opacity:0; pointer-events:none;
+    background:rgba(255,255,255,0.10);
+    -webkit-backdrop-filter:blur(22px) saturate(180%); backdrop-filter:blur(22px) saturate(180%);
+    border:1px solid rgba(255,255,255,0.28);
+    box-shadow:0 10px 34px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.38), inset 0 -1px 0 rgba(0,0,0,0.22);
+    transition:left .05s linear, top .05s linear, opacity .2s ease; }
+  #cluster.show { opacity:1; pointer-events:auto; }
+  #cluster .fc { min-width:80px; padding:15px 20px; display:flex; align-items:center; justify-content:center;
+    font:700 .9rem -apple-system, sans-serif; color:#f2f5f9; text-shadow:0 1px 2px rgba(0,0,0,0.45); }
+  #cluster .fc:active { background:rgba(255,255,255,0.20); }
+  #cluster #fcHold { border-left:1px solid rgba(255,255,255,0.22); }
+  #cluster #fcHold.on { background:rgba(240,164,74,0.45); color:#fff; }
+
+  /* marcador visual do dedo/caneta (p/ correlacionar iPad↔Mac no vídeo de teste) */
+  #mk { position:absolute; width:34px; height:34px; border-radius:50%; z-index:5;
+    transform:translate(-50%,-50%); pointer-events:none; display:none;
+    border:2.5px solid #43c3d0; box-shadow:0 0 14px rgba(67,195,208,.7);
+    transition:border-color .07s, width .07s, height .07s, box-shadow .07s; }
+  #mk::after { content:''; position:absolute; left:50%; top:50%; width:5px; height:5px;
+    transform:translate(-50%,-50%); border-radius:50%; background:#43c3d0; }
+  #mk.on { display:block; }
+  #mk.move { border-color:#43c3d0; box-shadow:0 0 14px rgba(67,195,208,.7); }
+  #mk.move::after { background:#43c3d0; }
+  #mk.drag { border-color:#f0a44a; width:42px; height:42px; box-shadow:0 0 20px rgba(240,164,74,.9); }
+  #mk.drag::after { background:#f0a44a; }
+  #mk.scroll { border-color:#5aa9ff; box-shadow:0 0 16px rgba(90,169,255,.8); }
+  #mk.scroll::after { background:#5aa9ff; }
+  #mk.click { border-color:#fff; width:20px; height:20px; box-shadow:0 0 22px rgba(255,255,255,.95); }
+  #mk.click::after { background:#fff; }
+  #tele { position:absolute; left:12px; bottom:10px; z-index:6; pointer-events:none;
+    font:700 .82rem/1 -apple-system, sans-serif; color:#e6eaf0;
+    background:rgba(12,14,18,.74); padding:6px 10px; border-radius:9px; opacity:.35; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <span class="hud" id="hud">conectando…</span>
+  <span class="sens">velocidade <input type="range" id="sens" min="0.8" max="4" step="0.2" value="2"></span>
+</header>
+<div id="stage">
+  <div id="pad">
+    <div id="mk"></div>
+    <div id="cluster">
+      <div class="fc" id="fcClick">clique</div>
+      <div class="fc" id="fcHold">segurar</div>
+    </div>
+    <div id="tele">—</div>
+    <div class="hint">deslize = mover o cursor (não clica)<br>
+      botão flutuante segue o ponteiro: clique · segurar (trava p/ arrastar)<br>
+      2 dedos ou faixa ⇅ = rolar</div>
+  </div>
+  <div id="strip"></div>
+</div>
+<footer>
+  <button id="btnL">clique</button>
+  <button id="btnR">botão direito</button>
+</footer>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const qs = new URLSearchParams(location.search);
+  const tok = qs.get('token');
+  const tokQ = tok ? '?token=' + encodeURIComponent(tok) : '';
+  const dot = $('dot'), hud = $('hud'), pad = $('pad'), strip = $('strip');
+  const mk = $('mk'), tele = $('tele'), cluster = $('cluster'), fcHold = $('fcHold');
+
+  // ── WS + HUD de latência ──
+  let ws = null;
+  let batch = [];
+  const rtts = [];
+  const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+  const connect = () => {
+    ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws${tokQ}`);
+    ws.onopen = () => { dot.classList.add('on'); hud.textContent = 'conectado'; };
+    ws.onclose = () => { dot.classList.remove('on'); hud.textContent = 'reconectando…'; setTimeout(connect, 1200); };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (m.type !== 'pointer.pong') return;
+      rtts.push(performance.now() - m.t); if (rtts.length > 30) rtts.shift();
+      const s = [...rtts].sort((a, b) => a - b);
+      hud.textContent = `latência ${s[Math.floor(s.length / 2)].toFixed(0)}ms · p95 ${(s[Math.floor(s.length * 0.95) - 1] || s[s.length - 1]).toFixed(0)}ms`;
+    };
+  };
+  connect();
+  setInterval(() => send({ type: 'pointer.ping', id: 1, t: performance.now() }), 2000);
+
+  // ── layout (p/ posicionar marcador + cluster) + aquece o helper no servidor ──
+  let padRect = null;
+  const layoutMap = () => {
+    padRect = pad.getBoundingClientRect();
+    if (cluster.style.left === '' || cluster.style.left === '0px') placeCluster(pad.clientWidth / 2, pad.clientHeight / 2);
+  };
+
+  // ── cluster de vidro: segue o ponteiro, sempre logo acima ──
+  const GAP = 28;
+  const placeCluster = (x, y) => {
+    const pw = pad.clientWidth, ph = pad.clientHeight;
+    const cw = cluster.offsetWidth, ch = cluster.offsetHeight;
+    let left = x - cw / 2;
+    let top = y - GAP - ch;             // acima do ponteiro
+    if (top < 4) top = y + GAP;         // perto do topo → aparece abaixo
+    left = Math.max(4, Math.min(pw - cw - 4, left));
+    top = Math.max(4, Math.min(ph - ch - 4, top));
+    cluster.style.left = left + 'px';
+    cluster.style.top = top + 'px';
+  };
+
+  fetch('/pointer/info' + tokQ).catch(() => {}).finally(layoutMap);
+  addEventListener('resize', layoutMap);
+  layoutMap();
+
+  // ── marcador visual + rótulo da ação (p/ o vídeo de teste) ──
+  let flashT = 0;
+  const setMark = (cx, cy, cls, label) => {
+    if (!padRect) return;
+    const x = cx - padRect.left, y = cy - padRect.top;
+    mk.style.left = x + 'px'; mk.style.top = y + 'px';
+    mk.className = 'on ' + cls;
+    tele.textContent = label; tele.style.opacity = '1';
+    placeCluster(x, y);                 // o cluster acompanha o ponteiro
+  };
+  const clearMark = () => { mk.className = ''; tele.style.opacity = '.35'; tele.textContent = '—'; };
+  const flashClick = (label) => {
+    mk.className = 'on click'; tele.textContent = label; tele.style.opacity = '1';
+    clearTimeout(flashT); flashT = setTimeout(clearMark, 220);
+  };
+
+  // ── cluster aparece só durante o uso; some 2s após levantar a caneta ──
+  let leftDown = false;
+  let hideTimer = 0;
+  const showCluster = () => { clearTimeout(hideTimer); cluster.classList.add('show'); };
+  const scheduleHide = () => {
+    clearTimeout(hideTimer);
+    if (leftDown) return;                 // segurando (drag em curso) → mantém
+    hideTimer = setTimeout(() => cluster.classList.remove('show'), 2000);
+  };
+
+  // ── estado do botão esquerdo (segurar/soltar p/ arrastar) ──
+  const setLeft = (down) => {
+    if (down === leftDown) return;
+    leftDown = down;
+    batch.push({ t: 'c', b: 'l', k: down ? 'down' : 'up' });
+    pad.classList.toggle('drag', down);
+    fcHold.classList.toggle('on', down);
+    fcHold.textContent = down ? 'soltar' : 'segurar';
+    if (navigator.vibrate) navigator.vibrate(8);
+    if (down) showCluster(); else scheduleHide();
+  };
+
+  // ── flush por frame: só movimento relativo (mouse) + scroll ──
+  let acc = { x: 0, y: 0 };  // delta relativo acumulado
+  let scr = 0;               // scroll acumulado
+  const SENS = () => Number($('sens').value);
+  const gain = (v) => SENS() * (0.45 + Math.min(v / 14, 2.6));  // devagar=preciso, rápido=atravessa
+  const flush = () => {
+    if (acc.x || acc.y) {
+      const g = gain(Math.hypot(acc.x, acc.y));
+      batch.push({ t: 'm', dx: acc.x * g, dy: acc.y * g });
+      acc = { x: 0, y: 0 };
+    }
+    if (Math.abs(scr) > 0.3) { batch.push({ t: 's', dx: 0, dy: scr }); scr = 0; }
+    if (batch.length) { send({ type: 'pointer.ev', evs: batch }); batch = []; }
+    requestAnimationFrame(flush);
+  };
+  requestAnimationFrame(flush);
+
+  // ── inércia de scroll (2 dedos e faixa ⇅) ──
+  let vel = 0, inertiaRaf = 0;
+  const startInertia = () => {
+    cancelAnimationFrame(inertiaRaf);
+    const step = () => {
+      vel *= 0.94;
+      if (Math.abs(vel) < 0.4) return;
+      scr += vel;
+      inertiaRaf = requestAnimationFrame(step);
+    };
+    inertiaRaf = requestAnimationFrame(step);
+  };
+  const stopInertia = () => { vel = 0; cancelAnimationFrame(inertiaRaf); };
+
+  // ── gestos no pad: deslizar SEMPRE só move (nunca clica) ──
+  const ptrs = new Map();
+  const firstId = () => [...ptrs.keys()][0];
+
+  pad.addEventListener('pointermove', (e) => {
+    const p = ptrs.get(e.pointerId);
+    if (!p) return;
+    showCluster();
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ce of evs) {
+      const dx = ce.clientX - p.x, dy = ce.clientY - p.y;
+      p.x = ce.clientX; p.y = ce.clientY;
+      if (ptrs.size === 1) { acc.x += dx; acc.y += dy; }
+      else if (ptrs.size === 2 && e.pointerId === firstId()) {
+        scr += dy; vel = vel * 0.7 + dy * 0.3;
+      }
+    }
+    if (ptrs.size >= 2) setMark(e.clientX, e.clientY, 'scroll', '✌︎ rolar');
+    else setMark(e.clientX, e.clientY, leftDown ? 'drag' : 'move', leftDown ? 'arrastando' : 'movendo');
+  });
+
+  pad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    pad.setPointerCapture(e.pointerId);
+    stopInertia();
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t0: performance.now() });
+    showCluster();
+    setMark(e.clientX, e.clientY, leftDown ? 'drag' : 'move', leftDown ? 'arrastando' : 'movendo');
+  });
+
+  const up = (e) => {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (ptrs.size === 0) {
+      if (Math.abs(vel) > 1.5) startInertia();
+      clearMark();
+      scheduleHide();               // some 2s após levantar (a não ser que esteja segurando)
+    }
+  };
+  pad.addEventListener('pointerup', up);
+  pad.addEventListener('pointercancel', up);
+
+  // ── botões flutuantes de vidro (não deixam o pad tratar o toque) ──
+  cluster.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); showCluster(); });
+  $('fcClick').onclick = () => { batch.push({ t: 'c', b: 'l', k: 'click' }); flashClick('clique'); scheduleHide(); };
+  fcHold.onclick = () => setLeft(!leftDown);
+
+  // ── faixa de rolagem (rodinha do mouse) ──
+  let sPrev = null;
+  strip.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); strip.setPointerCapture(e.pointerId);
+    stopInertia(); sPrev = e.clientY;
+  });
+  strip.addEventListener('pointermove', (e) => {
+    if (sPrev == null) return;
+    const dy = e.clientY - sPrev; sPrev = e.clientY;
+    scr += dy * 1.6; vel = vel * 0.7 + dy * 1.6 * 0.3;
+  });
+  const sUp = () => { if (sPrev != null && Math.abs(vel) > 1.5) startInertia(); sPrev = null; };
+  strip.addEventListener('pointerup', sUp);
+  strip.addEventListener('pointercancel', sUp);
+
+  // ── botões do rodapé (backup + botão direito) ──
+  $('btnL').onclick = () => { batch.push({ t: 'c', b: 'l', k: 'click' }); flashClick('clique'); };
+  $('btnR').onclick = () => { batch.push({ t: 'c', b: 'r', k: 'click' }); flashClick('direito'); };
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+})();
+</script>
+</body>
+</html>
