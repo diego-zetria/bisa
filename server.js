@@ -1085,6 +1085,75 @@ console.log(`[bisa] vault obsidian (Notas) → ${OBSIDIAN_DIR}`);
 
 // === HTTP + WS =============================================================
 const server = http.createServer(app);
+// === BisaPointer: iPad como trackpad do Mac (protótipo v1, 2026-07-21) =====
+// Página /trackpad.html manda lotes de eventos pelo WS ('pointer.ev') → FIFO
+// → BisaPointer.app injeta CGEvents. Helper via open -na (padrão BisaEar: TCC
+// de Acessibilidade só mostra prompt para .app). 'pointer.ping' ecoa 'pong'
+// pro HUD de latência do iPad. Só na tailnet + WS já autenticado.
+const POINTER_FIFO = '/tmp/bisa-pointer.fifo';
+const POINTER_APP = path.join(process.env.HOME || '', 'Applications', 'BisaPointer.app');
+let pointerStream = null;
+let pointerSpawnCheckAt = 0;
+const ensurePointerHelper = () => {
+  if (Date.now() - pointerSpawnCheckAt < 5000) return;
+  pointerSpawnCheckAt = Date.now();
+  const cp = require('child_process');
+  cp.execFile('/usr/bin/pgrep', ['-f', 'bisapointer'], (err) => {
+    if (!err) return; // já está rodando
+    try {
+      const st = fs.existsSync(POINTER_FIFO) && fs.statSync(POINTER_FIFO);
+      if (!st || !st.isFIFO()) {
+        if (st) fs.unlinkSync(POINTER_FIFO);
+        cp.execFileSync('/usr/bin/mkfifo', [POINTER_FIFO]);
+      }
+      cp.execFile('/usr/bin/open', ['-na', POINTER_APP, '--args', POINTER_FIFO]);
+      console.log('[bisa/pointer] helper iniciado');
+    } catch (e) { console.warn('[bisa/pointer] falha ao iniciar helper:', e.message); }
+  });
+};
+const pointerWrite = (line) => {
+  try {
+    if (!pointerStream) {
+      pointerStream = fs.createWriteStream(POINTER_FIFO);
+      pointerStream.on('error', () => { pointerStream = null; });
+      pointerStream.on('close', () => { pointerStream = null; });
+    }
+    pointerStream.write(line + '\n');
+  } catch { pointerStream = null; }
+};
+// Tamanho da tela do Mac (o helper grava na partida) — o cliente desenha a
+// área de mapeamento do modo Pencil com o aspecto certo (letterbox).
+app.get('/pointer/info', requireAuth, (_req, res) => {
+  ensurePointerHelper();
+  try { res.json(JSON.parse(fs.readFileSync('/tmp/bisa-pointer.info', 'utf8'))); }
+  catch { res.json({ w: 1728, h: 1117 }); }
+});
+const handlePointerWsMessage = (ws, msg) => {
+  if (msg.type === 'pointer.ping') {
+    try { ws.send(JSON.stringify({ type: 'pointer.pong', id: msg.id, t: msg.t })); } catch {}
+    return;
+  }
+  if (msg.type !== 'pointer.ev' || !Array.isArray(msg.evs)) return;
+  ensurePointerHelper();
+  for (const e of msg.evs.slice(0, 64)) {
+    if (!e || typeof e.t !== 'string') continue;
+    const dx = Number.isFinite(e.dx) ? Math.max(-800, Math.min(800, e.dx)) : 0;
+    const dy = Number.isFinite(e.dy) ? Math.max(-800, Math.min(800, e.dy)) : 0;
+    if (e.t === 'm' || e.t === 's') pointerWrite(JSON.stringify({ t: e.t, dx, dy }));
+    else if (e.t === 'a') {
+      const x = Number.isFinite(e.x) ? Math.max(0, Math.min(1, e.x)) : 0.5;
+      const y = Number.isFinite(e.y) ? Math.max(0, Math.min(1, e.y)) : 0.5;
+      pointerWrite(JSON.stringify({ t: 'a', x, y }));
+    } else if (e.t === 'c') {
+      pointerWrite(JSON.stringify({
+        t: 'c',
+        b: e.b === 'r' ? 'r' : 'l',
+        k: e.k === 'down' || e.k === 'up' ? e.k : 'click',
+      }));
+    }
+  }
+};
+
 const wss = new WebSocketServer({ noServer: true });
 
 const wsAuthed = (req) => {
@@ -1113,6 +1182,7 @@ wss.on('connection', (ws) => {
     let msg; try { msg = JSON.parse(raw); } catch { return; }
     if (msg && msg.type && msg.type.startsWith('notas.llm')) handleVaultWsMessage(ws, msg);
     else if (msg && msg.type && msg.type.startsWith('biso.llm')) handleBisoWsMessage(ws, msg);
+    else if (msg && msg.type && msg.type.startsWith('pointer.')) handlePointerWsMessage(ws, msg);
     else if (msg && msg.type && msg.type.startsWith('llm')) llm.handleWsMessage(ws, msg);
   });
   ws.send(JSON.stringify({ type: 'hello', role: ws._role }));
